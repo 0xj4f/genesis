@@ -13,6 +13,7 @@ from database_interface import (
     delete_user_by_id
 )
 from api_models import UserCreate, User, UserSearchRequest, UserUpdate, UserDeleteResponse
+import logging
 
 app = FastAPI()
 logging.basicConfig(level=logging.DEBUG)
