@@ -31,3 +31,6 @@ class UserUpdate(BaseModel):
 class UserSearchRequest(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
+
+class UserDeleteResponse(BaseModel):
+    message: str

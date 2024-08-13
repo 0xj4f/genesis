@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from database_config import SessionLocal, engine
 from database_models import Base
 from database_interface import (
@@ -8,12 +9,10 @@ from database_interface import (
     get_user_by_id,
     get_user_by_email,
     get_user_by_username,
-    update_user_by_id
+    update_user_by_id,
+    delete_user_by_id
 )
-
-from api_models import UserCreate, User, UserSearchRequest, UserUpdate
-
-
+from api_models import UserCreate, User, UserSearchRequest, UserUpdate, UserDeleteResponse
 
 app = FastAPI()
 
@@ -103,3 +102,18 @@ async def update_user_endpoint(user_id: str, user_update: UserUpdate, db: Sessio
 
     updated_user = update_user_by_id(db=db, user_id=user_id, user_update=user_update)
     return updated_user
+
+@app.delete("/users/{user_id}", response_model=UserDeleteResponse)
+async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
+    # Get the user by ID
+    user = get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        # Delete the user
+        delete_user_by_id(db, user_id)
+        return {"message": f"User with ID {user_id} has been successfully deleted"}
+    except SQLAlchemyError as e:
+        # Handle database-related errors
+        db.rollback()  # Rollback the transaction
+        raise HTTPException(status_code=500, detail="An error occurred while deleting the user")
