@@ -15,6 +15,7 @@ from database_interface import (
 from api_models import UserCreate, User, UserSearchRequest, UserUpdate, UserDeleteResponse
 
 app = FastAPI()
+logging.basicConfig(level=logging.DEBUG)
 
 # Create the database tables
 Base.metadata.create_all(bind=engine)
@@ -46,8 +47,13 @@ def create_user_endpoint(user_create: UserCreate, db: Session = Depends(get_db))
 
 @app.get("/users/", response_model=list[User])
 def get_users_endpoint(db: Session = Depends(get_db)):
-    users = get_all_users(db)
-    return users
+    try:
+        users = get_all_users(db)
+        return users
+    except Exception as e:
+        logging.error(f"Error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 
 @app.get("/users/{user_id}", response_model=User)

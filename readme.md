@@ -25,7 +25,11 @@ mysql -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" < scripts/init.sql
 ```
 
 
+## TEST DRIVEN DEVELOPMENT
 
+```bash
+pytest scripts/test_user_api.py
+```
 
 ## GPT
 

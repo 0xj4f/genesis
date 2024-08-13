@@ -4,8 +4,6 @@ from api_models import UserCreate
 from api_models import UserCreate, UserUpdate
 from uuid import UUID
 
-
-
 def create_user(db: Session, user_create: UserCreate):
     db_user = User(
         username=user_create.username,
