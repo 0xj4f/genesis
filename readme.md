@@ -12,6 +12,9 @@ pip install sqlalchemy "databases[mysql]" pymysql alembic
 
 ### Database
 
+you need to create the database schema before running your FastAPI application if it doesn't exist yet. SQLAlchemy won't create the database itself; it will only create the tables within an existing database
+
+
 create dev user
 ```bash
 CREATE USER 'dev-project'@'%' IDENTIFIED BY 'SECURE_PASSWORD';
