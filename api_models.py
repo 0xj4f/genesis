@@ -21,3 +21,8 @@ class User(UserBase):
 
     class Config:
         orm_mode = True
+
+
+class UserSearchRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
