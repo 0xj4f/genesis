@@ -1,61 +1,77 @@
 import requests
-import uuid
+import pytest
+from faker import Faker
 
-HOST = "http://localhost:8000"
+# Base URL for the API
+BASE_URL = "http://localhost:8000"  # Replace with your actual URL
 
+# Initialize Faker for generating test data
+fake = Faker()
 
-# Function to create a new user
-def create_user(username, email, password):
-    return requests.post(
-        f"{HOST}/create_user/",
-        data={"username": username, "email": email, "password": password},
-    ).json()
+# Helper function to generate random user data
+def generate_user_data():
+    return {
+        "username": fake.user_name(),
+        "email": fake.email(),
+        "password": "SecureP@ssw0rd123"  # Use a fixed password to simplify testing
+    }
 
+@pytest.fixture(scope="module")
+def create_users():
+    user_ids = []
+    # Create 5 users
+    for _ in range(5):
+        user_data = generate_user_data()
+        response = requests.post(f"{BASE_URL}/users/", json=user_data)
+        assert response.status_code == 200
+        user_id = response.json()['id']
+        user_ids.append(user_id)
+    return user_ids
 
-# Function to get all users
-def get_all_users():
-    return requests.get(f"{HOST}/get_users/").json()
+def test_get_all_users():
+    response = requests.get(f"{BASE_URL}/users/")
+    assert response.status_code == 200
+    users = response.json()
+    assert isinstance(users, list)
 
+def test_get_users_by_id(create_users):
+    user_ids = create_users
+    for user_id in user_ids:
+        response = requests.get(f"{BASE_URL}/users/{user_id}")
+        assert response.status_code == 200
+        user = response.json()
+        assert user['id'] == str(user_id)
 
-# Function to get a user by ID
-def get_user(user_id):
-    return requests.get(f"{HOST}/get_user/{user_id}").json()
+def test_get_users_by_email(create_users):
+    user_ids = create_users
+    for user_id in user_ids:
+        response = requests.get(f"{BASE_URL}/users/{user_id}")
+        assert response.status_code == 200
+        user = response.json()
+        response = requests.post(f"{BASE_URL}/users/search", json={"email": user['email']})
+        assert response.status_code == 200
+        found_user = response.json()
+        assert found_user['email'] == user['email']
 
+def test_get_users_by_username(create_users):
+    user_ids = create_users
+    for user_id in user_ids:
+        response = requests.get(f"{BASE_URL}/users/{user_id}")
+        assert response.status_code == 200
+        user = response.json()
+        response = requests.post(f"{BASE_URL}/users/search", json={"username": user['username']})
+        assert response.status_code == 200
+        found_user = response.json()
+        assert found_user['username'] == user['username']
 
-# Function to delete a user by ID
-def delete_user(user_id):
-    return requests.delete(f"{HOST}/delete_user/{user_id}").json()
+def test_delete_users(create_users):
+    user_ids = create_users
+    for user_id in user_ids:
+        response = requests.delete(f"{BASE_URL}/users/{user_id}")
+        assert response.status_code == 200
+        assert response.json()['message'] == f"User with ID {user_id} has been successfully deleted"
 
-
-# Step 1: Create 5 users
-print("Creating 5 users...")
-users = []
-for i in range(5):
-    user = create_user(
-        username=f"user{i}", email=f"user{i}@example.com", password="password123"
-    )
-    users.append(user)
-    print(f"Created user: {user}")
-
-# Step 2: Retrieve all users
-print("\nRetrieving all users...")
-all_users = get_all_users()
-print(f"All Users: {all_users}")
-
-# Step 3: Retrieve one specific user by ID
-print("\nRetrieving a specific user by ID...")
-user_id = users[2]["id"]  # Assuming we're retrieving the 3rd user created
-user = get_user(user_id)
-print(f"User retrieved: {user}")
-
-# Step 4: Delete one specific user by ID
-print("\nDeleting a specific user by ID...")
-deleted_user = delete_user(user_id)
-print(f"Deleted user: {deleted_user}")
-
-# Step 5: Verify the user was deleted
-print("\nVerifying user deletion...")
-try:
-    get_user(user_id)
-except Exception as e:
-    print(f"User with ID {user_id} successfully deleted.")
+        # Verify deletion
+        response = requests.get(f"{BASE_URL}/users/{user_id}")
+        assert response.status_code == 404
+        assert response.json()['detail'] == "User not found"
