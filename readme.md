@@ -2,7 +2,7 @@
 
 ## SETUP
 
-```
+```bash
 python3 -m venv .venv 
 . .venv/bin/activate
 pip install "fastapi[all]"
@@ -28,8 +28,6 @@ mysql -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" < scripts/init.sql
 
 
 ## GPT
-
-
 
 Act as Greatest Python and Fast API developer who's good at backend development and with a devsecops mindset.
 I want to tailor fit the experience that I'm having. 
@@ -89,5 +87,7 @@ I don't know where should I put that logic. so the database model will have user
 I want to heavily use the pedantic for performance. 
 so let's start first at the schemas
 
-
-
+## VSCODE
+- github dark
+- https://vscodethemes.com/e/fms-cat.theme-monokaisharp/monokai-sharp?language=python
+- https://vscodethemes.com/e/catppuccin.catppuccin-vsc/catppuccin-frappe?language=python

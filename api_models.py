@@ -22,6 +22,11 @@ class User(UserBase):
     class Config:
         orm_mode = True
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[SecretStr] = None
+
 
 class UserSearchRequest(BaseModel):
     email: Optional[EmailStr] = None

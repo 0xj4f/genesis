@@ -8,9 +8,11 @@ from database_interface import (
     get_user_by_id,
     get_user_by_email,
     get_user_by_username,
+    update_user_by_id
 )
 
-from api_models import UserCreate, User, UserSearchRequest
+from api_models import UserCreate, User, UserSearchRequest, UserUpdate
+
 
 
 app = FastAPI()
@@ -27,6 +29,7 @@ def get_db():
         db.close()
 
 
+# USERS ENDPOINTS
 @app.post("/users/", response_model=User)
 def create_user_endpoint(user_create: UserCreate, db: Session = Depends(get_db)):
     # Validate if the email already exists
@@ -79,3 +82,24 @@ async def get_user_by_request(
     raise HTTPException(
         status_code=400, detail="Either email or username must be provided"
     )
+
+@app.put("/users/{user_id}", response_model=User)
+async def update_user_endpoint(user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)):
+    db_user = get_user_by_id(db, user_id=user_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if the email is being updated and already exists for another user
+    if user_update.email and user_update.email != db_user.email:
+        existing_user = get_user_by_email(db, email=user_update.email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Check if the username is being updated and already exists for another user
+    if user_update.username and user_update.username != db_user.username:
+        existing_user = get_user_by_username(db, username=user_update.username)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already taken")
+
+    updated_user = update_user_by_id(db=db, user_id=user_id, user_update=user_update)
+    return updated_user
