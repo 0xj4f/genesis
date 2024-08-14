@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from database_config import SessionLocal, engine
@@ -163,15 +163,93 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return encoded_jwt
 
 
-@app.post("/login/")
-def login_endpoint(email: str, password: str, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, email=email)
-    if not user or not verify_password(password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+# @app.post("/login/")
+# def login_endpoint(email: str, password: str, db: Session = Depends(get_db)):
+#     user = get_user_by_email(db, email=email)
+#     if not user or not verify_password(password, user.password):
+#         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+#     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+#     access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
+#     return {"access_token": access_token, "token_type": "bearer"}
+
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def authenticate_user(db, username: str, password: str):
+    user = get_user_by_username(db, username)
+    if not user:
+        return False
+    if not verify_password(password, user.password):
+        return False
+
+    return user
+
+
+from pydantic import BaseModel
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    username: str or None = None
+
+
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session= Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires)
     return {"access_token": access_token, "token_type": "bearer"}
 
+# =============================================================================
+# AUTHENTICATED - ROUTES
+# =============================================================================
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    print(f"token: {token}")
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        print(f"username: {username}")
+        if username is None:
+            raise credentials_exception
+        # Verify user from the database here if necessary
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    
+    user = get_user_by_username(db=db, username=token_data.username)
+    if user is None:
+        raise credentials_exception
+    
+    return user
 
+@app.get("/users/me/", response_model=User)
+def read_users_me(current_user: dict = Depends(get_current_user)):
+    """
+    This is just an example route that needs to be authenticated:
+    always get the UUID of the current users
+    
+    current_user.uuid then that's the one we will pass around.
+    maybe we'll create an AuthenticatedUser model 
+    
+    
+    and refactor code 
+    """
+    return current_user
 
