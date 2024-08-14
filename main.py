@@ -18,15 +18,28 @@ from api_models import (
     UserSearchRequest,
     UserUpdate,
     UserDeleteResponse,
+    Token,
+    TokenData
 )
 import logging
+import bcrypt
+import jwt
+from datetime import datetime, timedelta
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# Configuration
+SECRET_KEY = "0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a" # openssl rand -hex 32
+ALGORITHM = "HS256"  # JWT algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Token expiration time
+
 
 app = FastAPI()
 logging.basicConfig(level=logging.DEBUG)
 
 # Create the database tables
 Base.metadata.create_all(bind=engine)
-
 
 def get_db():
     db = SessionLocal()
@@ -71,7 +84,7 @@ def get_user_by_id_endpoint(user_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/users/search", response_model=User)
-async def get_user_by_request(
+def get_user_by_request(
     request: UserSearchRequest, db: Session = Depends(get_db)
 ):
     if request.email:
@@ -96,7 +109,7 @@ async def get_user_by_request(
 
 
 @app.put("/users/{user_id}", response_model=User)
-async def update_user_endpoint(
+def update_user_endpoint(
     user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)
 ):
     db_user = get_user_by_id(db, user_id=user_id)
@@ -120,13 +133,11 @@ async def update_user_endpoint(
 
 
 @app.delete("/users/{user_id}", response_model=UserDeleteResponse)
-async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
-    # Get the user by ID
+def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     try:
-        # Delete the user
         delete_user_by_id(db, user_id)
         return {"message": f"User with ID {user_id} has been successfully deleted"}
     except SQLAlchemyError as e:
@@ -136,17 +147,6 @@ async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
             status_code=500, detail="An error occurred while deleting the user"
         )
 
-
-## AUTHENTICATION 
-
-import bcrypt
-import jwt
-from datetime import datetime, timedelta
-
-# Configuration
-SECRET_KEY = "0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a" # openssl rand -hex 32
-ALGORITHM = "HS256"  # JWT algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Token expiration time
 
 # Password verification function
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -162,6 +162,14 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+def authenticate_user(db, username: str, password: str):
+    user = get_user_by_username(db, username)
+    if not user:
+        return False
+    if not verify_password(password, user.password):
+        return False
+
+    return user
 
 # @app.post("/login/")
 # def login_endpoint(email: str, password: str, db: Session = Depends(get_db)):
@@ -172,33 +180,6 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 #     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 #     access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
 #     return {"access_token": access_token, "token_type": "bearer"}
-
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-def authenticate_user(db, username: str, password: str):
-    user = get_user_by_username(db, username)
-    if not user:
-        return False
-    if not verify_password(password, user.password):
-        return False
-
-    return user
-
-
-from pydantic import BaseModel
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class TokenData(BaseModel):
-    username: str or None = None
-
-
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session= Depends(get_db)):
