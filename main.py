@@ -186,7 +186,8 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
+                            detail="Incorrect username or password", 
+                            headers={"WWW-Authenticate": "Bearer"})
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires)
@@ -217,6 +218,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = get_user_by_username(db=db, username=token_data.username)
     if user is None:
         raise credentials_exception
+    if user.disabled:
+        raise HTTPException(status_code=400, detail="Inactive user")
     
     return user
 
@@ -233,4 +236,9 @@ def read_users_me(current_user: dict = Depends(get_current_user)):
     and refactor code 
     """
     return current_user
+
+@app.get("/users/me/items")
+async def read_own_items(current_user: User = Depends(get_current_user)):
+    return [{"item_id": 1, "owner": current_user}]
+
 
