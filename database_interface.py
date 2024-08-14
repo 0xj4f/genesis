@@ -3,12 +3,20 @@ from database_models import User
 from api_models import UserCreate
 from api_models import UserCreate, UserUpdate
 from uuid import UUID
+import bcrypt
 
-def create_user(db: Session, user_create: UserCreate):
+
+def hash_password(password: str) -> str:
+    # Hash the password with bcrypt
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed_password.decode("utf-8")
+
+
+def create_user(db: Session, user_create: UserCreate) -> User:
+    hashed_password = hash_password(user_create.password.get_secret_value())
+
     db_user = User(
-        username=user_create.username,
-        email=user_create.email,
-        password=user_create.password.get_secret_value(),  # For security reasons, store the raw password
+        username=user_create.username, email=user_create.email, password=hashed_password
     )
     db.add(db_user)
     db.commit()
@@ -31,6 +39,7 @@ def get_user_by_email(db: Session, email: str):
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
 
+
 def update_user_by_id(db: Session, user_id: UUID, user_update: UserUpdate):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -46,6 +55,7 @@ def update_user_by_id(db: Session, user_id: UUID, user_update: UserUpdate):
     db.commit()
     db.refresh(user)
     return user
+
 
 def delete_user_by_id(db: Session, user_id: UUID):
     user = db.query(User).filter(User.id == user_id).first()

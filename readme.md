@@ -5,7 +5,7 @@
 ```bash
 python3 -m venv .venv 
 . .venv/bin/activate
-pip install "fastapi[all]"
+pip install "fastapi[all]" bcrypt
 pip install sqlalchemy "databases[mysql]" pymysql alembic
 
 ```

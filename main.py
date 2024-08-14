@@ -10,9 +10,15 @@ from database_interface import (
     get_user_by_email,
     get_user_by_username,
     update_user_by_id,
-    delete_user_by_id
+    delete_user_by_id,
 )
-from api_models import UserCreate, User, UserSearchRequest, UserUpdate, UserDeleteResponse
+from api_models import (
+    UserCreate,
+    User,
+    UserSearchRequest,
+    UserUpdate,
+    UserDeleteResponse,
+)
 import logging
 
 app = FastAPI()
@@ -56,7 +62,6 @@ def get_users_endpoint(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-
 @app.get("/users/{user_id}", response_model=User)
 def get_user_by_id_endpoint(user_id: str, db: Session = Depends(get_db)):
     user = get_user_by_id(db, user_id)
@@ -89,8 +94,11 @@ async def get_user_by_request(
         status_code=400, detail="Either email or username must be provided"
     )
 
+
 @app.put("/users/{user_id}", response_model=User)
-async def update_user_endpoint(user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)):
+async def update_user_endpoint(
+    user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)
+):
     db_user = get_user_by_id(db, user_id=user_id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -100,7 +108,7 @@ async def update_user_endpoint(user_id: str, user_update: UserUpdate, db: Sessio
         existing_user = get_user_by_email(db, email=user_update.email)
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     # Check if the username is being updated and already exists for another user
     if user_update.username and user_update.username != db_user.username:
         existing_user = get_user_by_username(db, username=user_update.username)
@@ -109,6 +117,7 @@ async def update_user_endpoint(user_id: str, user_update: UserUpdate, db: Sessio
 
     updated_user = update_user_by_id(db=db, user_id=user_id, user_update=user_update)
     return updated_user
+
 
 @app.delete("/users/{user_id}", response_model=UserDeleteResponse)
 async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
@@ -123,4 +132,6 @@ async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
     except SQLAlchemyError as e:
         # Handle database-related errors
         db.rollback()  # Rollback the transaction
-        raise HTTPException(status_code=500, detail="An error occurred while deleting the user")
+        raise HTTPException(
+            status_code=500, detail="An error occurred while deleting the user"
+        )

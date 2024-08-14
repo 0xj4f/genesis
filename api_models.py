@@ -10,7 +10,7 @@ class UserBase(BaseModel):
     email: EmailStr
     password: SecretStr
 
-    @validator('password', pre=True, always=True)
+    @validator("password", pre=True, always=True)
     def validate_password(cls, password):
         if isinstance(password, SecretStr):
             password_str = password.get_secret_value()
@@ -19,15 +19,17 @@ class UserBase(BaseModel):
 
         # password_str = password.get_secret_value()
         if len(password_str) < 12:
-            raise ValueError('Password must be at least 12 characters long')
-        if not re.search(r'[a-z]', password_str):
-            raise ValueError('Password must contain at least one lowercase letter')
-        if not re.search(r'[A-Z]', password_str):
-            raise ValueError('Password must contain at least one uppercase letter')
-        if not re.search(r'[0-9]', password_str):
-            raise ValueError('Password must contain at least one number')
-        if not re.search(r'[@#$%^&+=!]', password_str):
-            raise ValueError('Password must contain at least one special character (@#$%^&+=!)')
+            raise ValueError("Password must be at least 12 characters long")
+        if not re.search(r"[a-z]", password_str):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"[A-Z]", password_str):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[0-9]", password_str):
+            raise ValueError("Password must contain at least one number")
+        if not re.search(r"[@#$%^&+=!]", password_str):
+            raise ValueError(
+                "Password must contain at least one special character (@#$%^&+=!)"
+            )
         return password
 
 
@@ -43,6 +45,7 @@ class User(UserBase):
     class Config:
         orm_mode = True
 
+
 class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -52,6 +55,7 @@ class UserUpdate(BaseModel):
 class UserSearchRequest(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
+
 
 class UserDeleteResponse(BaseModel):
     message: str
