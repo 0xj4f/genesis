@@ -5,8 +5,9 @@
 ```bash
 python3 -m venv .venv 
 . .venv/bin/activate
-pip install "fastapi[all]" bcrypt
-pip install sqlalchemy "databases[mysql]" pymysql alembic
+pip install "fastapi[all]" # main dependency 
+pip install sqlalchemy "databases[mysql]" pymysql alembic # database
+pip install bcrypt python-jose pyjwt # authentication
 
 ```
 
@@ -28,7 +29,8 @@ mysql -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" < scripts/init.sql
 ## TEST DRIVEN DEVELOPMENT
 
 ```bash
-pytest scripts/test_user_api.py
+pytest -v scripts/test_user_api.py
+pytest -v scripts/test_auth_flow.py
 ```
 
 ## GPT
