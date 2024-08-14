@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime
+from sqlalchemy import Column, String, Text, DateTime, Boolean
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.types import String as SqlString
@@ -18,6 +18,8 @@ class User(Base):
     password = Column(Text, nullable=False)
     created_at = Column(DateTime, default=func.now())
     last_modified = Column(DateTime, onupdate=func.now(), default=func.now())
+    disabled = Column(Boolean, nullable=False, default=False)  # New field
+
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"
