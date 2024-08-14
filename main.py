@@ -135,3 +135,43 @@ async def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500, detail="An error occurred while deleting the user"
         )
+
+
+## AUTHENTICATION 
+
+import bcrypt
+import jwt
+from datetime import datetime, timedelta
+
+# Configuration
+SECRET_KEY = "0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a" # openssl rand -hex 32
+ALGORITHM = "HS256"  # JWT algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Token expiration time
+
+# Password verification function
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+@app.post("/login/")
+def login_endpoint(email: str, password: str, db: Session = Depends(get_db)):
+    user = get_user_by_email(db, email=email)
+    if not user or not verify_password(password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
