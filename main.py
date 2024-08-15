@@ -51,18 +51,18 @@ def get_db():
         db.close()
 
 
+def validate_existing_user(db: Session, email: str = None, username: str = None):
+    # Validate if the email already exists
+    if email and get_user_by_email(db, email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    # Validate if the username already exists
+    if username and get_user_by_username(db, username):
+        raise HTTPException(status_code=400, detail="Username already taken")
+
 # USERS ENDPOINTS
 @app.post("/users/", response_model=User)
 def create_user_endpoint(user_create: UserCreate, db: Session = Depends(get_db)):
-    # Validate if the email already exists
-    if get_user_by_email(db, email=user_create.email):
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    # Validate if the username already exists
-    if get_user_by_username(db, username=user_create.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
-
-    # Create and return the new user
+    validate_existing_user(db, email=user_create.email, username=user_create.username)
     db_user = create_user(db=db, user_create=user_create)
     return db_user
 
