@@ -19,7 +19,7 @@ from api_models import (
     UserUpdate,
     UserDeleteResponse,
     Token,
-    TokenData
+    TokenData,
 )
 import logging
 import bcrypt
@@ -27,10 +27,11 @@ import jwt
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
+import os
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # Configuration
-SECRET_KEY = "0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a" # openssl rand -hex 32
+SECRET_KEY = os.getenv("OAUTH_SECRET_KEY","0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a") # openssl rand -hex 32
 ALGORITHM = "HS256"  # JWT algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Token expiration time
 
@@ -40,6 +41,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Create the database tables
 Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     db = SessionLocal()
@@ -84,9 +86,7 @@ def get_user_by_id_endpoint(user_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/users/search", response_model=User)
-def get_user_by_request(
-    request: UserSearchRequest, db: Session = Depends(get_db)
-):
+def get_user_by_request(request: UserSearchRequest, db: Session = Depends(get_db)):
     if request.email:
         user = get_user_by_email(db, email=request.email)
         if user:
@@ -150,7 +150,10 @@ def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
 
 # Password verification function
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+    )
+
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
@@ -162,6 +165,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
 def authenticate_user(db, username: str, password: str):
     user = get_user_by_username(db, username)
     if not user:
@@ -170,6 +174,7 @@ def authenticate_user(db, username: str, password: str):
         return False
 
     return user
+
 
 # @app.post("/login/")
 # def login_endpoint(email: str, password: str, db: Session = Depends(get_db)):
@@ -181,29 +186,38 @@ def authenticate_user(db, username: str, password: str):
 #     access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
 #     return {"access_token": access_token, "token_type": "bearer"}
 
+
 @app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session= Depends(get_db)):
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Incorrect username or password", 
-                            headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires)
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
     return {"access_token": access_token, "token_type": "bearer"}
+
 
 # =============================================================================
 # AUTHENTICATED - ROUTES
 # =============================================================================
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> User:
     print(f"token: {token}")
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -214,31 +228,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-    
+
     user = get_user_by_username(db=db, username=token_data.username)
     if user is None:
         raise credentials_exception
     if user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    
+        raise HTTPException(status_code=400, detail="User is deactivated")
     return user
+
 
 @app.get("/users/me/", response_model=User)
 def read_users_me(current_user: dict = Depends(get_current_user)):
-    """
-    This is just an example route that needs to be authenticated:
-    always get the UUID of the current users
-    
-    current_user.uuid then that's the one we will pass around.
-    maybe we'll create an AuthenticatedUser model 
-    
-    
-    and refactor code 
-    """
     return current_user
+
 
 @app.get("/users/me/items")
 async def read_own_items(current_user: User = Depends(get_current_user)):
     return [{"item_id": 1, "owner": current_user}]
-
-

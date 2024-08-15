@@ -20,6 +20,5 @@ class User(Base):
     last_modified = Column(DateTime, onupdate=func.now(), default=func.now())
     disabled = Column(Boolean, nullable=False, default=False)  # New field
 
-
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"

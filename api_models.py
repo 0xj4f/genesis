@@ -11,7 +11,6 @@ class UserBase(BaseModel):
     password: SecretStr
     disabled: Optional[bool] = False  # New field added with a default value
 
-
     @validator("password", pre=True, always=True)
     def validate_password(cls, password):
         if isinstance(password, SecretStr):
