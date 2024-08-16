@@ -1,9 +1,10 @@
+app/main.py
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from database_config import SessionLocal, engine
-from database_models import Base
-from database_interface import (
+from app.database.database_config import SessionLocal, engine
+from app.models.database_models import Base
+from app.database.database_interface import (
     create_user,
     get_all_users,
     get_user_by_id,
@@ -12,7 +13,7 @@ from database_interface import (
     update_user_by_id,
     delete_user_by_id,
 )
-from api_models import (
+from app.models.api_models import (
     UserCreate,
     User,
     UserSearchRequest,
@@ -245,3 +246,217 @@ def read_users_me(current_user: dict = Depends(get_current_user)):
 @app.get("/users/me/items")
 async def read_own_items(current_user: User = Depends(get_current_user)):
     return [{"item_id": 1, "owner": current_user}]
+app/auth/auth.py
+# auth.py
+from fastapi import HTTPException, Depends, status
+from sqlalchemy.orm import Session
+from datetime import timedelta, datetime
+import bcrypt
+import jwt
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+
+def authenticate_user(db: Session, username: str, password: str):
+    user = get_user_by_username(db, username)
+    if not user or not verify_password(password, user.password):
+        return False
+    return user
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=15))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# from auth import authenticate_user, create_access_token, verify_password
+app/database/database_config.py
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from urllib.parse import quote_plus
+import os
+
+DATABASE_USER = os.getenv("MYSQL_DEV_USER", "root")
+DATABASE_PASSWORD = os.getenv("MYSQL_DEV_PASSWORD", "")
+DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
+DATABASE_PORT = os.getenv("DATABASE_PORT", "3306")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "genesis")
+encoded_password = quote_plus(DATABASE_PASSWORD)  # if password has special characters
+
+# Construct the database URL
+SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{DATABASE_USER}:{encoded_password}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
+
+print(SQLALCHEMY_DATABASE_URL)
+# Create the engine and session
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+app/database/database_interface.py
+from sqlalchemy.orm import Session
+from app.models.database_models import User
+from app.models.api_models import UserCreate
+from app.models.api_models import UserCreate, UserUpdate
+from uuid import UUID
+import bcrypt
+
+
+def hash_password(password: str) -> str:
+    # Hash the password with bcrypt
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed_password.decode("utf-8")
+
+
+def create_user(db: Session, user_create: UserCreate) -> User:
+    hashed_password = hash_password(user_create.password.get_secret_value())
+
+    db_user = User(
+        username=user_create.username, email=user_create.email, password=hashed_password
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def get_all_users(db: Session):
+    return db.query(User).all()
+
+
+def get_user_by_id(db: Session, user_id: UUID):
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def get_user_by_email(db: Session, email: str):
+    return db.query(User).filter(User.email == email).first()
+
+
+def get_user_by_username(db: Session, username: str):
+    return db.query(User).filter(User.username == username).first()
+
+
+def update_user_by_id(db: Session, user_id: UUID, user_update: UserUpdate):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return None
+
+    if user_update.username:
+        user.username = user_update.username
+    if user_update.email:
+        user.email = user_update.email
+    if user_update.password:
+        user.password = user_update.password.get_secret_value()
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_by_id(db: Session, user_id: UUID):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        return None
+
+    db.delete(user)
+    db.commit()
+    return user
+app/database/session.py
+
+app/models/api_models.py
+from pydantic import BaseModel, EmailStr, SecretStr, validator
+from typing import Optional
+import re
+from uuid import UUID
+from datetime import datetime
+
+
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    password: SecretStr
+    disabled: Optional[bool] = False  # New field added with a default value
+
+    @validator("password", pre=True, always=True)
+    def validate_password(cls, password):
+        if isinstance(password, SecretStr):
+            password_str = password.get_secret_value()
+        else:
+            password_str = password
+
+        # password_str = password.get_secret_value()
+        if len(password_str) < 12:
+            raise ValueError("Password must be at least 12 characters long")
+        if not re.search(r"[a-z]", password_str):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"[A-Z]", password_str):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[0-9]", password_str):
+            raise ValueError("Password must contain at least one number")
+        if not re.search(r"[@#$%^&+=!]", password_str):
+            raise ValueError(
+                "Password must contain at least one special character (@#$%^&+=!)"
+            )
+        return password
+
+
+class UserCreate(UserBase):
+    pass
+
+
+class User(UserBase):
+    id: UUID
+    created_at: Optional[datetime] = None
+    last_modified: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[SecretStr] = None
+
+
+class UserSearchRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
+
+
+class UserDeleteResponse(BaseModel):
+    message: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    username: str or None = None
+app/models/database_models.py
+from sqlalchemy import Column, String, Text, DateTime, Boolean
+from sqlalchemy.dialects.mysql import CHAR
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.types import String as SqlString
+from sqlalchemy.sql import func
+from uuid import uuid4
+import sqlalchemy as sa
+
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(CHAR(36), primary_key=True, default=lambda: str(uuid4()))
+    username = Column(SqlString(100), unique=True, nullable=False)
+    email = Column(SqlString(255), unique=True, nullable=False)
+    password = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    last_modified = Column(DateTime, onupdate=func.now(), default=func.now())
+    disabled = Column(Boolean, nullable=False, default=False)  # New field
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username={self.username}, email={self.email})>"

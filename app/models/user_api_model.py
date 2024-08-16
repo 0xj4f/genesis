@@ -62,10 +62,20 @@ class UserDeleteResponse(BaseModel):
     message: str
 
 
+# class Token(BaseModel):
+#     access_token: str
+#     token_type: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: str  # New field added
 
 
 class TokenData(BaseModel):
     username: str or None = None
+
+
+class GetTokenRequest(BaseModel):
+    username: str
+    password: str
