@@ -1,4 +1,4 @@
-from app.database.database_interface import (
+from app.database.user_db_interface import (
     create_user_db,
     get_all_users_db,
     get_user_by_id_db,
@@ -7,10 +7,10 @@ from app.database.database_interface import (
     get_user_by_email_db,
     get_user_by_username_db
 )
-from app.models.api_models import UserCreate, UserUpdate
+from app.models.user_api_model import UserCreate, UserUpdate
 from sqlalchemy.orm import Session
 from app.utils.security import verify_password, hash_password
-from app.models.api_models import (
+from app.models.user_api_model import (
     UserCreate,
     User,
     UserSearchRequest,
