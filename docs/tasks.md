@@ -124,7 +124,7 @@ PROFILE FEATURE
 - get profile by id: 2hrs
 - update profile by id: 2hrs
 - delete profile by id: 2hrs
-- get profile by UUID: 2 hrs
+- get profile by UUID: 2hrs
 
 Logic:
 - profile is associated with user's
