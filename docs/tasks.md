@@ -119,12 +119,15 @@ AUTHENTICATION : 4 hrs
 
 
 PROFILE FEATURE 
-- create profile feature
-- get profile feature
-- get profile by id
-- update profile by id
-- delete profile by id
+- create profile feature: 4hrs
+- get own profile feature: 2hrs
+- get profile by id: 2hrs
+- update profile by id: 2hrs
+- delete profile by id: 2hrs
+- get profile by UUID: 2 hrs
 
+Logic:
+- profile is associated with user's
 
 
 
