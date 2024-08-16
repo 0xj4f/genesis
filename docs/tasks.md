@@ -117,6 +117,30 @@ AUTHENTICATION : 4 hrs
     - refresh token
     - use fresh access_token to visit authenticated endpoint
 
+
+PROFILE FEATURE 
+- create profile feature
+- get profile feature
+- get profile by id
+- update profile by id
+- delete profile by id
+
+
+
+
+
+
+
+## GPT 
+
+Creating a feature
+- create api endpoint
+- create dabase interface 
+- create pydantic request and response model if needed
+
+
+---
+
 CREATE PROFILE FEATURE 
 
 Feature 
@@ -138,9 +162,3 @@ what do you think are the fields that are need.
 and analyze what are things to be optional and what should be required
 
 
-## GPT 
-
-Creating a feature
-- create api endpoint
-- create dabase interface 
-- create pydantic request and response model if needed

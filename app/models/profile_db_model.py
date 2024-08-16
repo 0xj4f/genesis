@@ -1,10 +1,8 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Integer
 from sqlalchemy.dialects.mysql import CHAR
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from uuid import uuid4
-
-Base = declarative_base()
+from app.database.session import Base
 
 class Profile(Base):
     __tablename__ = "profiles"

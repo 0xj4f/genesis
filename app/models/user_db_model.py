@@ -1,13 +1,10 @@
 from sqlalchemy import Column, String, Text, DateTime, Boolean
 from sqlalchemy.dialects.mysql import CHAR
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.types import String as SqlString
 from sqlalchemy.sql import func
 from uuid import uuid4
 import sqlalchemy as sa
-
-Base = declarative_base()
-
+from app.database.session import Base
 
 class User(Base):
     __tablename__ = "users"
