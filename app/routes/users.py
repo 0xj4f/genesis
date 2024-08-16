@@ -10,7 +10,7 @@ from app.services.user_service import (
     get_user_by_username_service,
     get_user_by_email_service
 )
-from app.models.api_models import UserCreate, User, UserUpdate, UserDeleteResponse, UserSearchRequest
+from app.models.user_api_model import UserCreate, User, UserUpdate, UserDeleteResponse, UserSearchRequest
 
 router = APIRouter()
 

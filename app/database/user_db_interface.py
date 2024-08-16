@@ -1,7 +1,7 @@
 # from sqlalchemy.orm import Session
-# from app.models.database_models import User
-# from app.models.api_models import UserCreate
-# from app.models.api_models import UserCreate, UserUpdate
+# from app.models.user_db_model import User
+# from app.models.user_api_model import UserCreate
+# from app.models.user_api_model import UserCreate, UserUpdate
 # from uuid import UUID
 # import bcrypt
 
@@ -65,8 +65,9 @@
 #     db.delete(user)
 #     db.commit()
 #     return user
-from app.models.database_models import User
-from app.models.api_models import UserCreate, UserUpdate
+
+from app.models.user_db_model import User
+from app.models.user_api_model import UserCreate, UserUpdate
 from sqlalchemy.orm import Session
 from uuid import UUID
 
