@@ -2,6 +2,7 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, Integer
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.sql import func
 from uuid import uuid4
+from sqlalchemy.orm import relationship
 from app.database.session import Base
 
 class Profile(Base):
@@ -17,5 +18,6 @@ class Profile(Base):
     email = Column(String(255), unique=True, nullable=False)
     sub = Column(String(255), nullable=False)
 
+    user = relationship("User", back_populates="profile")
     def __repr__(self):
         return f"<Profile(id={self.id}, user_id={self.user_id}, email={self.email})>"

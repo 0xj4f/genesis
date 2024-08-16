@@ -4,12 +4,12 @@ from uuid import UUID
 from datetime import datetime
 
 class ProfileBase(BaseModel):
-    user_id: UUID
+    user_id: Optional[UUID]
     given_name: str
     family_name: str
     nick_name: Optional[str] = None
     picture: Optional[str] = None
-    email: EmailStr
+    email: Optional[EmailStr]
     sub: str
 
 class ProfileCreate(ProfileBase):
@@ -17,6 +17,7 @@ class ProfileCreate(ProfileBase):
 
 class Profile(ProfileBase):
     id: int
+    
     updated_at: Optional[datetime] = None
 
     class Config:
@@ -27,5 +28,4 @@ class ProfileUpdate(BaseModel):
     family_name: Optional[str] = None
     nick_name: Optional[str] = None
     picture: Optional[str] = None
-    email: Optional[EmailStr] = None
     sub: Optional[str] = None

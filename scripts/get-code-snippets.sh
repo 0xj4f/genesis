@@ -1,8 +1,8 @@
 #!/bin/bash
 
-version=0.2.2
-# LOGFILE="snippets/code.snippet.${version}.py"
-LOGFILE="snippets/code.snippet.profile.${version}.py"
+version=0.2.3
+LOGFILE="snippets/code.snippet.${version}.py"
+# LOGFILE="snippets/code.snippet.profile.${version}.py"
 
 > $LOGFILE
 
@@ -14,8 +14,8 @@ append_content() {
     echo "" >> $LOGFILE
 }
 
-# files=$(find ./app -name "*.py")
-files=$( find ./app -name "*profile*.py")
+files=$(find ./app -name "*.py")
+# files=$( find ./app -name "*profile*.py")
 for file in $files; do
     append_content $file
 done

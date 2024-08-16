@@ -4,6 +4,7 @@ from sqlalchemy.types import String as SqlString
 from sqlalchemy.sql import func
 from uuid import uuid4
 import sqlalchemy as sa
+from sqlalchemy.orm import relationship
 from app.database.session import Base
 
 class User(Base):
@@ -17,5 +18,6 @@ class User(Base):
     last_modified = Column(DateTime, onupdate=func.now(), default=func.now())
     disabled = Column(Boolean, nullable=False, default=False)  # New field
 
+    profile = relationship("Profile", uselist=False, back_populates="user")
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"

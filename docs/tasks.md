@@ -162,3 +162,28 @@ what do you think are the fields that are need.
 and analyze what are things to be optional and what should be required
 
 
+---
+
+Now I want to update the code base to my use case
+- create user
+- get token
+- create profile
+  - needs authentication
+  - validate  if profile is already existing
+  - use current user uuid
+- get own profile
+  - needs auth
+  - use current user uuid for profile
+  - return profile
+- update own profile
+  - needs auth
+  - use current user uuid for profile
+  - update profile
+  - return profile
+- delete profile
+  - needs auth
+  - use current user uuid for profile
+  - delete profile
+  
+I want you to focus on producing the code base for these features.
+as next we're going to create the test script.
