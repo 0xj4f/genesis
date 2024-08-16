@@ -33,35 +33,27 @@ mysql -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" < scripts/init.sql
 ## REPO STRUCTURE
 
 ```bash 
-app/
+app
+├── auth
+│   └── auth.py
+├── database
+│   ├── session.py
+│   └── user_db_interface.py
 ├── main.py
-├── models/
-│   ├── api_models.py
-│   ├── database_models.py
-├── database/
-│   ├── database_config.py
-│   ├── database_interface.py
-│   ├── session.py  # for get_db and session management
-├── services/
-│   ├── user_service.py  # handles business logic for users
-├── auth/
-│   ├── auth.py  # for OAuth2, JWT, etc.
-├── utils/
-│   ├── security.py  # for password hashing, validation, etc.
-
-this is my current project tree
-├── app
-│   ├── database
-│   │   ├── database_config.py  # database connection and database url
-│   │   ├── database_interface.py # crud methodologies for db operations 
-│   ├── main.py # main entry point
-│   ├── models
-│   │   ├── api_models.py # Pydantic Models
-│   │   ├── database_models.py # SQL aclhemy models
-│   ├── routes
-│   ├── schemas
-│   └── utils
-│       └── auth.py
+├── models
+│   ├── user_api_model.py
+│   └── user_db_model.py
+├── routes
+│   ├── auth.py
+│   ├── profiles.py
+│   └── users.py
+├── services
+│   ├── auth_service.py
+│   ├── profile_service.py
+│   └── user_service.py
+└── utils
+    ├── helpers.py
+    └── security.py
 
 can you analyze if this makes sense, or you have a better suggestion.
 my next step is creating profile feature, so I will create
@@ -148,3 +140,11 @@ so let's start first at the schemas
 - github dark
 - https://vscodethemes.com/e/fms-cat.theme-monokaisharp/monokai-sharp?language=python
 - https://vscodethemes.com/e/catppuccin.catppuccin-vsc/catppuccin-frappe?language=python
+
+
+## REFERENCES
+
+Authentication 
+- https://github.com/fastapi/fastapi/issues/3303
+- https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/#check-it
+- https://indominusbyte.github.io/fastapi-jwt-auth/usage/refresh/

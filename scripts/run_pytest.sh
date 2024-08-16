@@ -8,6 +8,8 @@ banner(){
 }
 
 banner "TESTING USER APIs"
-pytest -v tests/test_user_api.py
+pytest -v -p no:warnings tests/test_user_api.py
 banner "TESTING Authententication flow"
-pytest -v tests/test_auth_flow.py
+pytest -v -p no:warnings tests/test_auth_flow.py
+banner "TESTING Authententication flow 2"
+pytest -v -p no:warnings tests/test_auth_flow-2.py
