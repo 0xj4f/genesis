@@ -69,3 +69,8 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: str or None = None
+
+
+class GetTokenRequest(BaseModel):
+    username: str
+    password: str

@@ -14,15 +14,15 @@ def test_create_user():
         "password": "HelloWorld@123"
     }
 
-    # Create user
+    # Create user or handle existing user
     response = requests.post(f"{BASE_URL}/users/", json=user_data)
-    
-    if response.status_code == 400:
-        print("User already exists, continuing with authentication...")
-    elif response.status_code == 200:
+    if response.status_code == 200:
         print("User created successfully.")
+    elif response.status_code == 400:
+        print("User already exists, continuing with authentication...")
     else:
-        print(f"Unexpected response: {response.status_code}")
+        print(f"Unexpected response while creating user: {response.status_code}")
+        print(response.text)
         return
 
     # Authenticate and get the token
@@ -31,9 +31,11 @@ def test_create_user():
         "password": user_data["password"]
     }
     response = requests.post(f"{BASE_URL}/token", data=auth_data)
-
-    if response.status_code != 200:
+    if response.status_code == 200:
+        print("[+] Successful login.")
+    else:
         print(f"Authentication failed: {response.status_code}")
+        print(response.text)
         return
     
     token = response.json().get("access_token")
@@ -41,17 +43,14 @@ def test_create_user():
         print("Failed to retrieve access token.")
         return
 
-    headers = {"Authorization": f"Bearer {token}"}
-    
     # Use the token to authenticate and get the current user
+    headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(f"{BASE_URL}/users/me/", headers=headers)
-
     if response.status_code == 200:
-        print("Authenticated successfully.")
-        print(response.json())  # Print the user details
+        print("Successfully retrieved user data:")
     else:
-        print(f"Failed to authenticate with token: {response.status_code}")
-
+        print("Failed to retrieve user data:")
+    print(response.json())
 
 if __name__ == "__main__":
     test_create_user()

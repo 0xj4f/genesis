@@ -11,6 +11,8 @@ from app.services.user_service import (
     get_user_by_email_service
 )
 from app.models.user_api_model import UserCreate, User, UserUpdate, UserDeleteResponse, UserSearchRequest
+# from app.auth.auth import get_current_user
+from app.auth.auth import oauth_authenticate_current_user
 
 router = APIRouter()
 
@@ -56,3 +58,14 @@ def search_user(request: UserSearchRequest, db: Session = Depends(get_db)):
     if user:
         return user
     raise HTTPException(status_code=404, detail="User not found")
+
+# ===========================================================================
+# AUTHENTICATED ROUTES 
+# ===========================================================================
+
+from app.auth.auth import oauth_authenticate_current_user, get_current_user
+# @router.get("/users/me", response_model=User)
+@router.get("/me/",tags=["users"], response_model=User)
+def read_users_me(current_user: dict = Depends(oauth_authenticate_current_user)):
+# def read_users_me(current_user: dict = Depends(get_current_user)):
+    return current_user

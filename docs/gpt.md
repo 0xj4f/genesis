@@ -75,3 +75,49 @@ Here, `from_orm` uses `orm_mode` to automatically map fields from the SQLAlchemy
 - **Model Structure**: Using a base model like `UserBase` allows shared attributes to be reused, while `UserCreate` is specialized for input (like creating a user) and `User` for output (like returning user data in a response).
 
 This structure is both efficient and clear, aligning well with the separation of concerns in API design.
+
+
+
+## ASYNC and GIL 
+> in my case that I'm creating users crud to the database is it good to add async in my api routes?  will it not block or be a problem for other request, some say there is a problem in GIL 
+
+
+Yes, adding `async` to your API routes, especially for a CRUD application interacting with a database, is generally a good practice. It can improve the performance of your application by allowing other requests to be handled while waiting for I/O operations, such as database queries, to complete.
+
+### **Why Use `async` for CRUD Operations?**
+
+1. **Non-blocking I/O**: 
+   - Database operations are typically I/O-bound, meaning they spend time waiting for data to be read or written. Using `async` in your CRUD operations allows the server to handle other incoming requests during this waiting period, making your application more responsive and scalable.
+
+2. **Concurrency**: 
+   - When your application is handling multiple requests simultaneously, using `async` ensures that one long-running request (e.g., a complex database query) doesn't block others. This improves throughput and reduces latency under load.
+
+### **Concerns with the Global Interpreter Lock (GIL)**
+
+The Global Interpreter Lock (GIL) is a mutex that protects access to Python objects, preventing multiple native threads from executing Python bytecodes at once. This can be a concern for CPU-bound tasks that require intensive computation, as it can limit the performance of multi-threaded applications.
+
+**For I/O-bound tasks (like database operations), the GIL is less of a concern**:
+
+- **Async I/O**: When you're performing I/O-bound tasks asynchronously, the GIL isn't as restrictive because the operations are waiting for external events (like data from a database) rather than using CPU time. This allows other tasks to be executed in the meantime.
+
+- **Database Libraries**: Many modern database libraries, such as `asyncpg` for PostgreSQL, are designed to work well with asynchronous frameworks like FastAPI, bypassing many of the issues related to the GIL by offloading tasks to asynchronous I/O operations.
+
+### **When `async` Might Not Be Necessary**
+
+- **CPU-bound tasks**: If your CRUD operations involve heavy computation or processing within Python itself (e.g., complex data transformations), `async` might not be beneficial because the GIL can become a bottleneck. For CPU-bound tasks, you might consider other techniques, such as multiprocessing or offloading the work to background workers.
+
+- **Simplicity**: If your application is simple and doesn't need to handle a high volume of concurrent requests, using `async` might add unnecessary complexity.
+
+### **Best Practice**
+
+For typical CRUD operations involving database interactions, adding `async` to your API routes is usually beneficial and aligns with FastAPI's design:
+
+- **Use `async` for database interactions** to take advantage of non-blocking I/O.
+- **Ensure your database library** supports asynchronous operations (e.g., `asyncpg` for PostgreSQL, `aiomysql` for MySQL).
+- **Monitor performance**: If you notice performance issues, it might be related to how the async operations are managed or the specific use case (e.g., too many concurrent connections to the database). 
+
+In summary, for a CRUD application that interacts with a database, using `async def` in your API routes is generally a good approach and will likely improve your application's performance and scalability. The GIL is not a significant issue for these I/O-bound tasks.
+
+
+> I need to have some raw test without async and  
+> use async database interactions: 

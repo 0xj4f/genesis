@@ -1,5 +1,10 @@
 # USERS DOMAIN 
 
+quick run
+```bash
+uvicorn app.main:app --reload
+# fastapi dev main.py  # before when the project was flat
+```
 ## SETUP
 
 ```bash
@@ -23,6 +28,52 @@ GRANT ALL PRIVILEGES ON *.* TO 'dev-project'@'%' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 
 mysql -u "$MYSQL_DEV_USER" -p"$MYSQL_DEV_PASSWORD" < scripts/init.sql
+```
+
+## REPO STRUCTURE
+
+```bash 
+app/
+├── main.py
+├── models/
+│   ├── api_models.py
+│   ├── database_models.py
+├── database/
+│   ├── database_config.py
+│   ├── database_interface.py
+│   ├── session.py  # for get_db and session management
+├── services/
+│   ├── user_service.py  # handles business logic for users
+├── auth/
+│   ├── auth.py  # for OAuth2, JWT, etc.
+├── utils/
+│   ├── security.py  # for password hashing, validation, etc.
+
+this is my current project tree
+├── app
+│   ├── database
+│   │   ├── database_config.py  # database connection and database url
+│   │   ├── database_interface.py # crud methodologies for db operations 
+│   ├── main.py # main entry point
+│   ├── models
+│   │   ├── api_models.py # Pydantic Models
+│   │   ├── database_models.py # SQL aclhemy models
+│   ├── routes
+│   ├── schemas
+│   └── utils
+│       └── auth.py
+
+can you analyze if this makes sense, or you have a better suggestion.
+my next step is creating profile feature, so I will create
+- crud api endpoints
+- crud database operations interace
+- pydantic model 
+- sqlalchemy model 
+
+I just want you to take these into consideration, I want you to focus on analyzing the repo structure and my naming conventions. 
+
+my goal is to have good readability and intuitive in terms to file navigation
+
 ```
 
 
