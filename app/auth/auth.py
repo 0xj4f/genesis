@@ -1,15 +1,13 @@
-# auth.py
 from fastapi import HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
-import bcrypt
-# import jwt
-import os
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from app.database.user_db_interface import get_user_by_username_db
 from app.models.user_api_model import User, Token, TokenData
 from app.database.session import get_db
+import bcrypt
+import os
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -81,35 +79,6 @@ def oauth_authenticate_current_user(
     if user.disabled:
         raise HTTPException(status_code=400, detail="User is deactivated")
     return user
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> User:
-    print(f"token: {token}")
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        print(f"username: {username}")
-        if username is None:
-            raise credentials_exception
-        # Verify user from the database here if necessary
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-
-    user = get_user_by_username_db(db=db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    if user.disabled:
-        raise HTTPException(status_code=400, detail="User is deactivated")
-    return user
-
 
 """
 test scripts

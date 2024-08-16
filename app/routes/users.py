@@ -62,10 +62,16 @@ def search_user(request: UserSearchRequest, db: Session = Depends(get_db)):
 # ===========================================================================
 # AUTHENTICATED ROUTES 
 # ===========================================================================
+"""
+important notes in authenticated routes.
+make sure that defined endpoints ends with "/"
+example:
+/user/me -> /users/me/
+otherwise authentication process gets errors 
+"""
+from app.auth.auth import oauth_authenticate_current_user
 
-from app.auth.auth import oauth_authenticate_current_user, get_current_user
-# @router.get("/users/me", response_model=User)
-@router.get("/me/",tags=["users"], response_model=User)
+@router.get("/me/", response_model=User)
 def read_users_me(current_user: dict = Depends(oauth_authenticate_current_user)):
 # def read_users_me(current_user: dict = Depends(get_current_user)):
     return current_user
