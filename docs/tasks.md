@@ -1,0 +1,146 @@
+# SCRUM Breakdown
+
+
+BackEnd API Foundations
+- creating API endpoint
+- business logic
+- sanitizing input data 
+- validating input data
+- database connection
+- unit test 
+
+FrontEnd Foundations
+- setup API connection
+- create code component (example reusable card )
+- style (css)
+- responsiveness (mobile, laptop, big desktop)
+
+
+Definition of Done:
+- deployed to development environment
+- tested by dev
+- tested by QA
+
+## SPRINT 0 : Setup 
+- setup LOCAL Environment: 1 hr
+    - setup fastapi and dependencies: 30 mins
+    - setup mysql: 30 
+        - database administration
+        - database init sql 
+- data structure design: 1hr 
+- systems design: 1hr
+
+## SPRINT 1 : User, Profiles and Authentication
+
+### BackEnd
+
+USER FEATURE: 8 hr
+- create user feature: 2 hr 
+    - api endpoint
+    - api model
+    - database interface
+    - database model 
+
+- get users feature: 2 hr
+    - get all
+    - get by id
+    - get by email 
+
+- update user feature: 1 hr
+    - api endpoint
+    - api model
+    - database interface
+
+- delete user feature: 1hr
+    - api endpoint
+    - api model
+    - database interface
+
+- created unit test for all apis: 1hr
+
+
+- Business Logic: 1 hr
+    creating users:
+    - validate email before creating user
+    - validate username before creating user
+    updating user:
+    - validate if email is already used
+    - validate if username is already used
+
+- Security
+  paswword strength:
+    - 1 lower char
+    - 1 upper char
+    - 1 symbol
+    - 1 number
+
+- test_user_apis: 1 hr 
+  - create 5 user 
+  - get all user 
+  - search user by id 
+  - delete user
+    - check if user is really deleted 
+
+AUTHENTICATION : 4 hrs 
+- create login endpoint 
+  - update storing of password to be hashed
+  - check hashed password 
+
+- setup oauth dependencies 
+- password verifier
+- create jwt tokens
+- jwt tokens verifier
+- /token api endpoint 
+- authenticated by JWT endpoint 
+
+- test validity of authentication 
+    - token expiry
+    - encryption
+    - oauth library 
+
+- create refresh tokens endpoint: 1 hr
+  - token validator
+  -  
+
+
+- test_auth_flow: 1 hr 
+    - create test user
+    - use user creds to login
+    - login and get access_token
+    - use access_token to visit authenticated endpoint
+
+- test_auth_flow-2: 1 hr 
+    - create test user
+    - use user creds to login
+    - login and get access_token
+    - use access_token to visit authenticated endpoint
+    - refresh token
+    - use fresh access_token to visit authenticated endpoint
+
+CREATE PROFILE FEATURE 
+
+Feature 
+- user_id: UUID 
+- given_name: str 
+- family_name: str 
+- nick_name: str 
+- picture: str 
+- updated_at: date str 
+- email: email str 
+- sub: str 
+
+please create:
+- api model using pydantic for api_models.py
+- database model for database_models.py
+
+I want this data structure to be ready when I integrate oauth openID connect.
+what do you think are the fields that are need. 
+and analyze what are things to be optional and what should be required
+
+
+## GPT 
+
+Creating a feature
+- create api endpoint
+- create dabase interface 
+- create pydantic request and response model if needed
