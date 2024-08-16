@@ -13,3 +13,5 @@ banner "TESTING Authententication flow"
 pytest -v -p no:warnings tests/test_auth_flow.py
 banner "TESTING Authententication flow 2"
 pytest -v -p no:warnings tests/test_auth_flow-2.py
+banner "TESTING Profile flow"
+pytest -v -p no:warnings tests/test_profile_flow.py
