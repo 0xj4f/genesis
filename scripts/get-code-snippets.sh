@@ -1,23 +1,31 @@
 #!/bin/bash
-LOGFILE=code.txt
 
-echo app/main.py >> $LOGFILE
-echo "$(cat app/main.py)" >> $LOGFILE
+LOGFILE="snippets/code.snippet.py"
 
-echo app/auth/auth.py >> $LOGFILE
-echo "$(cat app/auth/auth.py)" >> $LOGFILE
+# Ensure the logfile is empty before starting
+> $LOGFILE
 
-echo app/database/database_config.py >> $LOGFILE
-echo "$(cat app/database/database_config.py)" >> $LOGFILE
+# Function to append file content to the log
+append_content() {
+    echo "# $1" >> $LOGFILE
+    # echo '```python' >> $LOGFILE
+    cat "$1" >> $LOGFILE
+    # echo '```' >> $LOGFILE
+    echo "" >> $LOGFILE
+}
 
-echo app/database/database_interface.py >> $LOGFILE
-echo "$(cat app/database/database_interface.py)" >> $LOGFILE
+# Append content of each file
+append_content "app/main.py"
+append_content "app/auth/auth.py"
+append_content "app/database/user_db_interface.py"
+append_content "app/database/session.py"
+append_content "app/models/user_api_model.py"
+append_content "app/models/user_db_model.py"
+append_content "app/routes/users.py"
+append_content "app/routes/profiles.py"
+append_content "app/services/user_service.py"
+append_content "app/services/profile_service.py"
+append_content "app/utils/security.py"
+append_content "app/utils/helpers.py"
 
-echo app/database/session.py >> $LOGFILE
-echo "$(cat app/database/session.py)" >> $LOGFILE
-
-echo app/models/api_models.py >> $LOGFILE
-echo "$(cat app/models/api_models.py)" >> $LOGFILE
-
-echo app/models/database_models.py >> $LOGFILE
-echo "$(cat app/models/database_models.py)" >> $LOGFILE
+echo "Content of all specified files has been logged to $LOGFILE."
