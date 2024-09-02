@@ -9,6 +9,7 @@ BackEnd API Foundations
 - database connection
 - unit test 
 
+
 FrontEnd Foundations
 - setup API connection
 - create code component (example reusable card )
@@ -21,6 +22,13 @@ Definition of Done:
 - tested by dev
 - tested by QA
 
+
+Backend API optimizations
+- rate limiting
+- async logging 
+
+
+---
 ## SPRINT 0 : Setup 
 - setup LOCAL Environment: 1 hr
     - setup fastapi and dependencies: 30 mins

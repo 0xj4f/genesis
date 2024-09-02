@@ -121,3 +121,131 @@ In summary, for a CRUD application that interacts with a database, using `async 
 
 > I need to have some raw test without async and  
 > use async database interactions: 
+
+## ASYNC OPERATIONS
+
+To determine if your FastAPI code and the database interaction are using non-blocking I/O, we need to review a few key aspects:
+
+1. **FastAPI and Async Support**: FastAPI supports asynchronous programming and non-blocking I/O, but this only applies if the endpoints and the database interactions are implemented in an asynchronous manner.
+
+2. **SQLAlchemy with MySQL**: SQLAlchemy is traditionally blocking and does not natively support asynchronous interactions with the database. However, there is support for asynchronous programming when combined with `asyncpg` (for PostgreSQL) or when using `SQLAlchemy 1.4` with `async` capabilities. Since you're using MySQL, you could leverage `asyncmy` or `aiomysql` with `SQLAlchemy` for asynchronous interactions.
+
+3. **Current Code Review**: The provided code uses SQLAlchemy in a traditional, synchronous way (`create_engine`, `sessionmaker`, and typical ORM queries). This means that your database calls are blocking, and if you want non-blocking behavior, you would need to refactor the code to use asynchronous session handling and async-compatible MySQL drivers.
+
+### Current Implementation and Blocking I/O
+
+- **Database Session**: You're using `create_engine` and `sessionmaker` from SQLAlchemy for database interactions, which are synchronous. This means that when your code executes a database query, it will block the execution thread until the query completes. This behavior can cause performance bottlenecks, especially under heavy load or when database queries are slow.
+
+- **Asynchronous Programming in FastAPI**: FastAPI supports async functions, and they are recommended for I/O-bound operations, such as database interactions. Since your current implementation does not use async/await for database operations, these operations are blocking.
+
+### Moving to Non-Blocking I/O with FastAPI and SQLAlchemy
+
+To convert your codebase to use non-blocking I/O with asynchronous database interactions, you would need to:
+
+1. **Use an Async-compatible Database Driver**: For MySQL, you can use `aiomysql` or `asyncmy`.
+
+2. **Configure SQLAlchemy for Async Usage**: Use SQLAlchemy's async session capabilities introduced in version 1.4.
+
+3. **Refactor the Code**: Change the database interaction code to use async sessions and async functions. This would mean refactoring the `get_db` function, the service functions, and the route handlers to use `async def` and `await`.
+
+### Example of Asynchronous Setup with FastAPI and SQLAlchemy for MySQL
+
+Here’s how you might refactor your current setup to be asynchronous:
+
+#### 1. Update Dependencies
+
+Make sure you have the necessary async libraries installed:
+
+```bash
+pip install asyncmy sqlalchemy[asyncio] fastapi uvicorn
+```
+
+#### 2. Asynchronous Database Session
+
+Refactor your `database/session.py` to use async sessions:
+
+```python
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from urllib.parse import quote_plus
+import os
+
+DATABASE_USER = os.getenv("MYSQL_DEV_USER", "root")
+DATABASE_PASSWORD = os.getenv("MYSQL_DEV_PASSWORD", "")
+DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
+DATABASE_PORT = os.getenv("DATABASE_PORT", "3306")
+DATABASE_NAME = os.getenv("DATABASE_NAME", "genesis")
+encoded_password = quote_plus(DATABASE_PASSWORD)  # if password has special characters
+
+# Use asyncmy for MySQL async support
+SQLALCHEMY_DATABASE_URL = f"mysql+asyncmy://{DATABASE_USER}:{encoded_password}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
+
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+
+Base = declarative_base()
+
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
+```
+
+#### 3. Asynchronous CRUD Operations
+
+Refactor your `database/user_db_interface.py` to use async methods:
+
+```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.models.user_db_model import User
+from app.models.user_api_model import UserCreate, UserUpdate
+from sqlalchemy import update, delete
+
+async def create_user_db(db: AsyncSession, user_create: UserCreate) -> User:
+    db_user = User(**user_create.dict())
+    db.add(db_user)
+    await db.commit()
+    await db.refresh(db_user)
+    return db_user
+
+async def get_all_users_db(db: AsyncSession):
+    result = await db.execute(select(User))
+    return result.scalars().all()
+
+async def get_user_by_id_db(db: AsyncSession, user_id: str):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    return result.scalar()
+
+# Similar refactoring for update and delete functions
+```
+
+#### 4. Asynchronous Route Handlers
+
+Make sure your route handlers call these async functions and use `async def` and `await` appropriately:
+
+```python
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database.session import get_db
+from app.services.user_service import create_user_service, get_all_users_service
+
+router = APIRouter()
+
+@router.post("/", response_model=User)
+async def create_user(user_create: UserCreate, db: AsyncSession = Depends(get_db)):
+    return await create_user_service(db, user_create)
+
+@router.get("/", response_model=List[User])
+async def read_users(skip: int = 0, limit: int = 10, db: AsyncSession = Depends(get_db)):
+    users = await get_all_users_service(db)
+    return users[skip: skip + limit]
+```
+
+### Conclusion
+
+- The original implementation uses synchronous database calls, which are blocking. For non-blocking I/O, you need to use asynchronous drivers and sessions.
+- With the above changes, you can leverage FastAPI’s full potential for handling asynchronous operations, which will improve scalability and responsiveness, especially under high loads.
+- Ensure that the entire stack, including routes, services, and database interactions, are consistently using asynchronous code to avoid blocking. 
+
+This conversion allows you to handle more concurrent requests efficiently, making your FastAPI application truly async and non-blocking.
