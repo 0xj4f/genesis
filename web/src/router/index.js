@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import store from '@/store'; // Import the Vuex store
 import HomeView from '../views/HomeView.vue'
 import RegistrationView from '@/views/RegistrationView.vue'; 
 import LoginView from '@/views/LoginView.vue'; 
@@ -33,6 +34,8 @@ const routes = [
     path: '/profile',
     name: 'Profile',
     component: ProfileView,
+    meta: { requiresAuth: true }, // Meta field to indicate that this route requires authentication
+
   },
 
 
@@ -43,5 +46,19 @@ const router = createRouter({
   history: createWebHistory(process.env.BASE_URL),
   routes
 })
+
+
+// Navigation Guard
+router.beforeEach((to, from, next) => {
+  if (to.matched.some(record => record.meta.requiresAuth)) {
+    if (!store.getters.isAuthenticated) {
+      next('/login'); // Redirect to login page if not authenticated
+    } else {
+      next(); // Allow access if authenticated
+    }
+  } else {
+    next(); // Allow access if the route does not require authentication
+  }
+});
 
 export default router

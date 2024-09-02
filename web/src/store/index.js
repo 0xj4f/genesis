@@ -3,26 +3,6 @@
 // export default createStore({
 //   state: {
 //     user: null,
-//   },
-//   mutations: {
-//     setUser(state, user) {
-//       state.user = user;
-//     },
-//   },
-//   actions: {
-//     registerUser({ commit }, userData) {
-//       // Add registration logic here
-//       commit('setUser', userData);
-//     },
-//   },
-//   getters: {
-//     isAuthenticated: state => !!state.user,
-//   },
-// });
-
-// export default createStore({
-//   state: {
-//     user: null,
 //     accessToken: null,
 //   },
 //   mutations: {
@@ -32,33 +12,28 @@
 //     setAccessToken(state, token) {
 //       state.accessToken = token;
 //     },
+//     clearAuthData(state) {
+//       state.user = null;
+//       state.accessToken = null;
+//     }
 //   },
 //   actions: {
 //     login({ commit }, token) {
 //       commit('setAccessToken', token);
 //     },
-//     fetchUserProfile({ commit, state }) {
-//       fetch('http://127.0.0.1:8000/profile/me/', {
-//         method: 'GET',
-//         headers: {
-//           'Authorization': `Bearer ${state.accessToken}`,
-//           'Accept': 'application/json'
-//         }
-//       })
-//       .then(response => response.json())
-//       .then(data => {
-//         commit('setUser', data);
-//       })
-//       .catch(error => console.error('Error fetching profile:', error));
+//     async fetchUserProfile({ commit, state }) {
+//       // Profile fetching logic
+//     },
+//     logout({ commit }) {
+//       commit('clearAuthData');
+//       // Additional logic to handle logout (e.g., clearing tokens from local storage)
 //     }
 //   },
 //   getters: {
-//     isAuthenticated: state => !!state.accessToken,
+//     isAuthenticated: state => !!state.accessToken, // Return true if accessToken is not null
 //     userProfile: state => state.user,
 //   },
 // });
-
-
 import { createStore } from 'vuex';
 
 export default createStore({
@@ -73,17 +48,21 @@ export default createStore({
     setAccessToken(state, token) {
       state.accessToken = token;
     },
+    clearAuthData(state) {
+      state.user = null;
+      state.accessToken = null;
+    }
   },
   actions: {
     login({ commit }, token) {
       commit('setAccessToken', token);
     },
-    async fetchUserProfile({ commit, state }) {
+    async fetchUserProfile({ commit }) {
       try {
         const response = await fetch('http://127.0.0.1:8000/profile/me/', {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${state.accessToken}`,
+            'Authorization': `Bearer ${this.state.accessToken}`, // Using state directly
             'Accept': 'application/json'
           }
         });
@@ -96,10 +75,14 @@ export default createStore({
       } catch (error) {
         console.error('Error fetching profile:', error);
       }
+    },
+    logout({ commit }) {
+      commit('clearAuthData');
+      // Additional logic to handle logout (e.g., clearing tokens from local storage)
     }
   },
   getters: {
-    isAuthenticated: state => !!state.accessToken,
+    isAuthenticated: state => !!state.accessToken, // Return true if accessToken is not null
     userProfile: state => state.user,
   },
 });

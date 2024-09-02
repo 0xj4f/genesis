@@ -3,10 +3,25 @@
     <router-link to="/">Home</router-link> |
     <router-link to="/about">About</router-link> | 
     <router-link to="/register">Register</router-link> | 
-    <router-link to="/login">Login</router-link>
+    <router-link v-if="!isAuthenticated" to="/login">Login</router-link>
+    <a v-if="isAuthenticated" href="#" @click.prevent="logout">Logout</a>
+
   </nav>
   <router-view/>
 </template>
+<script>
+import { mapGetters, mapActions } from 'vuex';
+
+export default {
+  name: 'App',
+  computed: {
+    ...mapGetters(['isAuthenticated']), // Use Vuex getter to check authentication status
+  },
+  methods: {
+    ...mapActions(['logout']), // Map Vuex action to handle logout
+  }
+};
+</script>
 
 <style>
 #app {
