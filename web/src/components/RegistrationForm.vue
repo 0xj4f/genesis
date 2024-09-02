@@ -16,6 +16,16 @@
       </div>
       <button type="submit">Register</button>
     </form>
+
+    <!-- Success Message -->
+    <div v-if="successMessage" class="success-message">
+      {{ successMessage }}
+    </div>
+
+    <!-- Error Message -->
+    <div v-if="errorMessage" class="error-message">
+      {{ errorMessage }}
+    </div>
   </div>
 </template>
 
@@ -27,6 +37,8 @@ export default {
       username: '',
       email: '',
       password: '',
+      successMessage: '',
+      errorMessage: ''
     };
   },
   methods: {
@@ -45,10 +57,25 @@ export default {
           },
           body: JSON.stringify(userData),
         });
-        const result = await response.json();
-        console.log(result);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(result);
+          this.successMessage = 'Successfully registered!';
+          this.errorMessage = '';
+        } else {
+          const errorResult = await response.json();
+          if (errorResult.detail && errorResult.detail.length > 0) {
+            this.errorMessage = errorResult.detail[0].msg;
+          } else {
+            this.errorMessage = 'Registration failed. Please try again.';
+          }
+          this.successMessage = '';
+        }
       } catch (error) {
         console.error('Error:', error);
+        this.errorMessage = 'An error occurred during registration. Please try again.';
+        this.successMessage = '';
       }
     },
   },
@@ -88,5 +115,23 @@ button {
 
 button:hover {
   background-color: #d4d4d4;
+}
+
+.success-message {
+  margin-top: 20px;
+  padding: 10px;
+  color: #28a745;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 5px;
+}
+
+.error-message {
+  margin-top: 20px;
+  padding: 10px;
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 5px;
 }
 </style>
