@@ -26,8 +26,6 @@
 </template>
 
 <script>
-import { mapActions } from 'vuex';
-
 export default {
   name: 'LoginForm',
   data() {
@@ -39,7 +37,6 @@ export default {
     };
   },
   methods: {
-    ...mapActions(['login']),
     async loginUser() {
       const formData = new URLSearchParams();
       formData.append('username', this.username);
@@ -57,10 +54,12 @@ export default {
 
         if (response.ok) {
           const result = await response.json();
-          this.login(result.access_token); // Store the access token in Vuex
+          console.log(result);
           this.successMessage = 'Login successful!';
           this.errorMessage = '';
-          this.$router.push('/profile'); // Redirect to profile page
+          // Store tokens in localStorage or Vuex for further use
+          localStorage.setItem('access_token', result.access_token);
+          localStorage.setItem('refresh_token', result.refresh_token);
         } else {
           const errorResult = await response.json();
           this.errorMessage = errorResult.detail || 'Login failed. Please try again.';
