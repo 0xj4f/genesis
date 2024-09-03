@@ -198,3 +198,46 @@ Now I want to update the code base to my use case
   
 I want you to focus on producing the code base for these features.
 as next we're going to create the test script.
+
+## Sep3 , 2024
+
+11 AM - 1pm  IAM, RBAC and research and decision making if it's in the best direction.
+
+Implementing IAM and RBAC access requires being very accurate on the planning which access you will have to give.
+which means you need to know first the exact features.
+
+right now it will be a slow down if I started thinking about the RBAC and IAM management. 
+
+lets simplify, roles
+- admin
+- seller/artist
+- user
+
+most endpoints will be protected, by admin role
+
+every registration should be a default user,
+so the validation should happen in group role,
+group role will be added manually, for now
+
+
+
+Ok let's start in the ecommerce, to make it this simple
+
+- admin
+- seller
+- user
+
+let's create the admin dashboard, finish it.
+then come back later to analyze all the endpoints created. 
+
+- Users created.
+- Products Created.
+
+
+Product Item
+
+Create PRODUCTS CRUD
+
+
+
+

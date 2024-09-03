@@ -1,6 +1,72 @@
 # 
 ## IAM MANAGEMENT
 
+2 default users role
+
+- admin: can do everything
+- user: read items
+
+
+
+I think I need thave some mock data first that I can test. 
+it looks something like this, if you can suggest better I'm open for suggestions.
+```Yaml
+- username: genesis-admin
+  user_role: admin
+  group_role: admin
+  status: active
+
+- username: genesis-staff
+  user_role: user
+  group_role: admin
+  status: active
+
+- username: ecom-user
+  user_role: user
+  group_role: customer
+  status: active
+
+- username: richie
+  user_role: user
+  group_role: customer
+  status: active
+
+- username: auction_user
+  user_role: user
+  group_role: auction_user
+  status: active
+
+- username: auction_artist
+  user_role: user
+  group_role: auction_artist
+  status: active
+
+- username: cinos
+  user_role: user
+  group_role: auction_artist
+  status: active
+```
+
+And this is the mock data I was thinking for the permissions and roles. 
+please fill them up so I can see and connect the data
+
+roles:
+- admin
+- staff 
+- user
+- customer
+- auction_user
+- auction_artist
+
+permissions:
+
+auction_artist:
+- create_auction_event ( LIST CRUD )
+- create_auction_item ( LIST CRUD )
+...  please  populate this with things you think best for this
+
+
+
 ## AUCTIONING SYSTEM
 
 

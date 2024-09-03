@@ -1,0 +1,113 @@
+{
+  "users": [
+    {
+      "username": "genesis-admin",
+      "user_role": "admin",
+      "group_role": "admin",
+      "status": "active"
+    },
+    {
+      "username": "genesis-staff",
+      "user_role": "staff",
+      "group_role": "admin",
+      "status": "active"
+    },
+    {
+      "username": "ecom-user",
+      "user_role": "user",
+      "group_role": "customer",
+      "status": "active"
+    },
+    {
+      "username": "richie",
+      "user_role": "user",
+      "group_role": "customer",
+      "status": "active"
+    },
+    {
+      "username": "auction_user",
+      "user_role": "user",
+      "group_role": "auction_user",
+      "status": "active"
+    },
+    {
+      "username": "auction_artist",
+      "user_role": "user",
+      "group_role": "auction_artist",
+      "status": "active"
+    },
+    {
+      "username": "cinos",
+      "user_role": "user",
+      "group_role": "auction_artist",
+      "status": "active"
+    }
+  ],
+  "roles": [
+    {
+      "role_name": "admin",
+      "permissions": [
+        "manage_users",
+        "manage_roles",
+        "manage_groups",
+        "manage_auctions",
+        "view_reports",
+        "manage_products",
+        "full_access"
+      ]
+    },
+    {
+      "role_name": "staff",
+      "permissions": [
+        "view_reports",
+        "manage_products",
+        "manage_orders",
+        "manage_auction_items",
+        "moderate_content"
+      ]
+    },
+    {
+      "role_name": "user",
+      "permissions": [
+        "view_auctions",
+        "bid_on_auctions",
+        "purchase_items"
+      ]
+    },
+    {
+      "role_name": "customer",
+      "permissions": [
+        "view_products",
+        "add_to_cart",
+        "purchase_items",
+        "write_reviews",
+        "view_orders"
+      ]
+    },
+    {
+      "role_name": "auction_user",
+      "permissions": [
+        "view_auctions",
+        "bid_on_auctions",
+        "purchase_auction_items",
+        "view_auction_events"
+      ]
+    },
+    {
+      "role_name": "auction_artist",
+      "permissions": [
+        "create_auction_event",
+        "view_own_auction_events",
+        "edit_own_auction_events",
+        "delete_own_auction_events",
+        "create_auction_item",
+        "view_own_auction_items",
+        "edit_own_auction_items",
+        "delete_own_auction_items",
+        "manage_bids",
+        "view_bids",
+        "view_auction_reports"
+      ]
+    }
+  ]
+}
