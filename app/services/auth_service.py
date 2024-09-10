@@ -20,10 +20,12 @@ def get_token_service(db: Session, form_data: dict ) -> Token :
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Generate access token
-    access_token = create_access_token(data={"sub": user.username})
-    # Generate refresh token
-    refresh_token = create_refresh_token(data={"sub": user.username})
+    payload = {
+            "sub": user.username,
+            "user_id": user.id
+    }
+    access_token = create_access_token(data=payload)
+    refresh_token = create_refresh_token(data=payload)
     
     return {
         "access_token": access_token,

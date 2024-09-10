@@ -79,3 +79,7 @@ class TokenData(BaseModel):
 class GetTokenRequest(BaseModel):
     username: str
     password: str
+    
+class UserMinimal(BaseModel):
+    user_id: UUID
+    username: str

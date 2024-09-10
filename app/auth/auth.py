@@ -4,7 +4,8 @@ from datetime import timedelta, datetime
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from app.database.user_db_interface import get_user_by_username_db
-from app.models.user_api_model import User, Token, TokenData
+from app.models.user_api_model import User, Token, TokenData, UserMinimal
+
 from app.database.session import get_db
 import bcrypt
 import os
@@ -42,10 +43,12 @@ def create_refresh_token(data: dict) -> str:
 def decode_token(token: str) -> str:
     """
     to add more token validation in the future
+    token experiration is working
     """
     try:
         decoded = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return decoded.get("sub")
+        print(decoded)
+        return decoded
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
@@ -65,7 +68,7 @@ def oauth_authenticate_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    username: str = decode_token(token=token)
+    username: str = decode_token(token=token).get("sub")
     print(token)
     print(username)
     try:
@@ -82,6 +85,24 @@ def oauth_authenticate_current_user(
     if user.disabled:
         raise HTTPException(status_code=400, detail="User is deactivated")
     return user
+
+
+def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> UserMinimal:
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    payload = decode_token(token=token)  # Assumes decode_token decodes the token and extracts the payload
+    print(payload)
+    user_id = payload.get("user_id")
+    username = payload.get("sub")
+
+    if not user_id or not username:
+        raise credentials_exception
+
+    return UserMinimal(user_id=user_id, username=username)
 
 """
 test scripts
