@@ -14,13 +14,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 SECRET_KEY = os.getenv("OAUTH_SECRET_KEY","0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a") # openssl rand -hex 32
 ALGORITHM = os.getenv("OAUTH_ALGORITHM","HS256") # JWT algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = os.getenv("OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", 30) # openssl rand -hex 32
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "30")) # openssl rand -hex 32
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def authenticate_user(db: Session, username: str, password: str):
     user = get_user_by_username_db(db, username)

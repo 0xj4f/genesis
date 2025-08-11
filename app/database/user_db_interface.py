@@ -3,6 +3,13 @@ from app.models.user_api_model import UserCreate, UserUpdate
 from sqlalchemy.orm import Session
 from uuid import UUID
 
+# def create_user_db(db: Session, user_payload: dict) -> User:
+#     db_user = User(**user_payload)
+#     db.add(db_user); 
+#     db.commit(); 
+#     db.refresh(db_user)
+#     return db_user
+
 def create_user_db(db: Session, user_create: UserCreate) -> User:
     db_user = User(**user_create.dict())
     db.add(db_user)

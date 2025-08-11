@@ -41,7 +41,7 @@ def validate_existing_user(db: Session, email: str = None, username: str = None)
 def create_user_service(db: Session, user_create: UserCreate) -> User:
     # Additional business logic can be added here
     validate_existing_user(db, email=user_create.email, username=user_create.username)
-    user_create.password = hash_password(user_create.password.get_secret_value())  # Hash password
+    user_create.password = hash_password(user_create.password.get_secret_value())
     return create_user_db(db, user_create)
 
 def get_all_users_service(db: Session):

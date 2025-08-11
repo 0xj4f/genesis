@@ -4,8 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from urllib.parse import quote_plus
 import os
 
-DATABASE_USER = os.getenv("MYSQL_DEV_USER", "root")
-DATABASE_PASSWORD = os.getenv("MYSQL_DEV_PASSWORD", "")
+DATABASE_USER = os.getenv("MYSQL_DEV_USER", "dev_project")
+DATABASE_PASSWORD = os.getenv("MYSQL_DEV_PASSWORD", "SECURE_PASSWORD")
 DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
 DATABASE_PORT = os.getenv("DATABASE_PORT", "3306")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "genesis")
