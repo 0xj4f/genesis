@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from app.database.user_db_interface import get_user_by_username_db
 from app.models.user_api_model import User, Token, TokenData, UserMinimal
+from app.utils.security import verify_password, hash_password
 
 from app.database.session import get_db
 import bcrypt

@@ -14,7 +14,6 @@ encoded_password = quote_plus(DATABASE_PASSWORD)  # if password has special char
 # Construct the database URL
 SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{DATABASE_USER}:{encoded_password}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
 
-print(SQLALCHEMY_DATABASE_URL)
 # Create the engine and session
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
