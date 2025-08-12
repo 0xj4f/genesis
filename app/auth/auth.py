@@ -8,11 +8,12 @@ from app.models.user_api_model import User, Token, TokenData, UserMinimal
 from app.utils.security import verify_password, hash_password
 
 from app.database.session import get_db
-import bcrypt
-import os
+import os, uuid
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
+ISSUER = os.getenv("OAUTH_ISSUER", "https://auth.local")  # set to your base URL
+AUDIENCE = os.getenv("OAUTH_DEFAULT_AUDIENCE", "genesis-api")
 SECRET_KEY = os.getenv("OAUTH_SECRET_KEY","0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a") # openssl rand -hex 32
 ALGORITHM = os.getenv("OAUTH_ALGORITHM","HS256") # JWT algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "30")) # openssl rand -hex 32
@@ -24,10 +25,19 @@ def authenticate_user(db: Session, username: str, password: str):
         return False
     return user
 
+from datetime import timedelta, datetime, timezone
+
 def create_token(data: dict, expires_delta: timedelta) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    to_encode = {
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "iat": int(now.timestamp()),
+        "nbf": int(now.timestamp()),
+        "exp": int((now + expires_delta).timestamp()),
+        "jti": str(uuid.uuid4()),
+        **data,
+    }
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def create_access_token(data: dict) -> str:
@@ -36,18 +46,23 @@ def create_access_token(data: dict) -> str:
 def create_refresh_token(data: dict) -> str:
     return create_token(data, timedelta(days=7))  # Example: 7 days validity for refresh token
 
-def decode_token(token: str) -> str:
+def decode_token(token: str) -> dict:
     """
     to add more token validation in the future
-    token experiration is working
     """
     try:
-        decoded = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        print(decoded)
+        decoded = jwt.decode(
+            token,
+            SECRET_KEY,              # later: public key(s) selection by kid
+            algorithms=[ALGORITHM],
+            audience=AUDIENCE,
+            issuer=ISSUER,
+            options={"require_exp": True, "require_iat": True, "require_nbf": True},
+        )
         return decoded
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
+
 def oauth_authenticate_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
@@ -81,7 +96,6 @@ def oauth_authenticate_current_user(
     if user.disabled:
         raise HTTPException(status_code=400, detail="User is deactivated")
     return user
-
 
 def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> UserMinimal:
     credentials_exception = HTTPException(
