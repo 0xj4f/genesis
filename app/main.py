@@ -1,36 +1,52 @@
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.declarative import declarative_base
-from app.routes.users import router as user_router
-from app.routes.profiles import router as profile_router
+
+from app.auth.auth import bootstrap_root_admin
+from app.database.session import Base, SessionLocal, engine
+from app.routes.admin import router as admin_ops_router
 from app.routes.auth import router as auth_router
-from app.database.session import Base,engine
-import logging
+from app.routes.profiles import router as profile_router
+from app.routes.users import admin_router as admin_user_router
+from app.routes.users import user_router
 
-app = FastAPI(title="Genesis - Identity Access Management")
+app = FastAPI(title="Genesis - IAM MVP")
 
-# origins = ["http://localhost:8080", "http://127.0.0.1:8000"]
-# ONLY FOR TEST PUPRPOSES
-origins = ["*"]
+cors_origins = [origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8080").split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # or specify ["GET", "POST", ...]
-    allow_headers=["*"],  # or specify ["Content-Type", "Authorization", ...]
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
-
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-# Log the creation of tables
-logger.info("Creating tables...")
-Base.metadata.create_all(bind=engine)
-logger.info("Tables created.")
 
-# Include routers
-app.include_router(auth_router, prefix="", tags=["auth"])
-app.include_router(user_router, prefix="/users", tags=["users"])
-app.include_router(profile_router, prefix="/profile", tags=["profile"])
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("Creating database schema...")
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        bootstrap_root_admin(db)
+    finally:
+        db.close()
+    logger.info("Schema ready and root admin bootstrap checked.")
+
+
+@app.get("/health", tags=["system"])
+def health():
+    return {"status": "ok"}
+
+
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(profile_router)
+app.include_router(admin_user_router)
+app.include_router(admin_ops_router)
