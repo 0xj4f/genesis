@@ -28,6 +28,7 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
     last_login_ip = Column(String(45), nullable=True)
     last_login_method = Column(String(20), nullable=True)  # password, google, github, facebook
+    role = Column(String(20), nullable=False, default="user")  # user, admin, root
 
     # Relationships
     profile = relationship("Profile", uselist=False, back_populates="user")

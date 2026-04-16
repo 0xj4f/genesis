@@ -134,4 +134,50 @@ export default {
   ssoLinkUrl(provider) {
     return `${API_BASE}/auth/sso/${provider}/link`;
   },
+
+  // Admin
+  adminLogin(username, password) {
+    const body = new URLSearchParams({ username, password });
+    return request('/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+  },
+
+  getAnalytics(token) {
+    return request('/admin/analytics', { headers: authHeaders(token) });
+  },
+
+  getAdminUsers(token, page = 1, perPage = 20, search = '') {
+    const params = new URLSearchParams({ page, per_page: perPage });
+    if (search) params.set('search', search);
+    return request(`/admin/users?${params}`, { headers: authHeaders(token) });
+  },
+
+  getAdminUserDetail(token, userId) {
+    return request(`/admin/users/${userId}`, { headers: authHeaders(token) });
+  },
+
+  updateUserRole(token, userId, role) {
+    return request(`/admin/users/${userId}/role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  toggleUserStatus(token, userId) {
+    return request(`/admin/users/${userId}/disable`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    });
+  },
+
+  adminDeleteUser(token, userId) {
+    return request(`/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    });
+  },
 };

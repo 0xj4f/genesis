@@ -47,6 +47,7 @@ def get_token_service(db: Session, form_data: OAuth2PasswordRequestForm, request
         "auth_method": "password",
         "scope": "openid profile email",
         "sid": session_id,
+        "role": user.role,
     }
 
     # Create tokens - both get the sid claim
@@ -102,6 +103,7 @@ def refresh_access_token_service(refresh_token: str, db: Session, request: Reque
         "auth_method": payload.get("auth_method", "password"),
         "scope": payload.get("scope", "openid profile email"),
         "sid": sid,
+        "role": user.role,
     }
 
     new_access_token, _ = create_access_token(data=new_payload)

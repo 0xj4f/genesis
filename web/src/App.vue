@@ -1,6 +1,21 @@
 <template>
   <div id="app">
-    <nav v-if="isAuthenticated" class="navbar">
+    <!-- Admin Navbar -->
+    <nav v-if="isAdminRoute && isAdminAuthenticated" class="navbar navbar-admin">
+      <div class="navbar-inner">
+        <router-link to="/admin" class="nav-brand">
+          <span class="brand-icon brand-admin">!</span>
+          <span class="brand-text">genesis<span class="text-warn">_admin</span></span>
+        </router-link>
+        <div class="nav-links">
+          <router-link to="/admin" class="nav-link">// dashboard</router-link>
+          <button class="btn btn-ghost nav-link" @click="adminLogout">// logout</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- User Navbar -->
+    <nav v-else-if="isAuthenticated && !isAdminRoute" class="navbar">
       <div class="navbar-inner">
         <router-link to="/profile" class="nav-brand">
           <span class="brand-icon">&gt;_</span>
@@ -13,8 +28,10 @@
         </div>
       </div>
     </nav>
+
     <router-view />
-    <footer v-if="!isAuthenticated" class="auth-footer">
+
+    <footer v-if="showFooter" class="auth-footer">
       <span class="text-muted">built by </span><span class="text-accent">0xj4f</span>
     </footer>
   </div>
@@ -26,10 +43,17 @@ import { mapGetters, mapActions } from 'vuex';
 export default {
   name: 'App',
   computed: {
-    ...mapGetters(['isAuthenticated']),
+    ...mapGetters(['isAuthenticated', 'isAdminAuthenticated']),
+    isAdminRoute() {
+      return this.$route.path.startsWith('/admin');
+    },
+    showFooter() {
+      return (!this.isAuthenticated && !this.isAdminRoute) ||
+             (this.isAdminRoute && !this.isAdminAuthenticated);
+    },
   },
   methods: {
-    ...mapActions(['logout']),
+    ...mapActions(['logout', 'adminLogout']),
   },
 };
 </script>
@@ -56,8 +80,12 @@ export default {
   opacity: 0.3;
 }
 
+.navbar-admin::after {
+  background: linear-gradient(90deg, transparent, #f59e0b, transparent);
+}
+
 .navbar-inner {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--space-lg);
   height: 56px;
@@ -91,14 +119,19 @@ export default {
   font-family: var(--font-mono);
 }
 
+.brand-admin {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
 .brand-text {
   font-size: var(--text-base);
   font-family: var(--font-mono);
 }
 
-.text-accent {
-  color: var(--accent);
-}
+.text-accent { color: var(--accent); }
+.text-warn { color: #f59e0b; }
 
 .nav-links {
   display: flex;
@@ -121,6 +154,12 @@ export default {
 .nav-link.router-link-active {
   color: var(--accent);
   background: var(--accent-glow);
+}
+
+.navbar-admin .nav-link:hover,
+.navbar-admin .nav-link.router-link-active {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .auth-footer {

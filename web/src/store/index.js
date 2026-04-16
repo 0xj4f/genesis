@@ -9,6 +9,7 @@ export default createStore({
     accessToken: null,
     refreshToken: null,
     ssoProviders: [],
+    adminToken: null,
   },
 
   mutations: {
@@ -19,12 +20,14 @@ export default createStore({
       state.refreshToken = refreshToken || state.refreshToken;
     },
     setSSOProviders(state, providers) { state.ssoProviders = providers; },
+    setAdminToken(state, token) { state.adminToken = token; },
     clearAuth(state) {
       state.user = null;
       state.profile = null;
       state.accessToken = null;
       state.refreshToken = null;
     },
+    clearAdminAuth(state) { state.adminToken = null; },
   },
 
   actions: {
@@ -90,6 +93,16 @@ export default createStore({
       }
     },
 
+    async adminLogin({ commit }, { username, password }) {
+      const data = await api.adminLogin(username, password);
+      commit('setAdminToken', data.access_token);
+    },
+
+    adminLogout({ commit }) {
+      commit('clearAdminAuth');
+      router.push('/admin/login');
+    },
+
     logout({ commit }) {
       commit('clearAuth');
       router.push('/login');
@@ -101,6 +114,7 @@ export default createStore({
     userProfile: state => state.profile,
     hasProfile: state => !!state.profile,
     currentUser: state => state.user,
+    isAdminAuthenticated: state => !!state.adminToken,
     initials: state => {
       if (state.profile) {
         const g = state.profile.given_name?.[0] || '';
