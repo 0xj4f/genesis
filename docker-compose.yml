@@ -28,7 +28,7 @@ services:
       DATABASE_PORT: "3306"
       DATABASE_NAME: genesis
       # JWT / Auth
-      OAUTH_ISSUER: http://localhost:8000
+      OAUTH_ISSUER: http://localhost:8001
       OAUTH_ALGORITHM: RS256
       OAUTH_DEFAULT_AUDIENCE: genesis-api
       OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
@@ -37,8 +37,8 @@ services:
       OAUTH_PRIVATE_KEY_PATH: ./secrets/dev-private.pem
       OAUTH_PUBLIC_KEY_PATH: ./secrets/dev-public.pem
       OAUTH_JWT_KID: genesis-dev-1
-      # CORS
-      CORS_ALLOW_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080"
+      # CORS - allow the web frontend
+      CORS_ALLOW_ORIGINS: "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8082"
       # Sessions
       MAX_CONCURRENT_SESSIONS: "5"
       # Storage
@@ -51,6 +51,13 @@ services:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
+
+  web:
+    build: ./web
+    ports:
+      - "8082:80"
+    depends_on:
+      - api
 
 volumes:
   mysql_data:

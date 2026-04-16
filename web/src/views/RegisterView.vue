@@ -3,8 +3,8 @@
     <div class="auth-card card">
       <div class="auth-header">
         <div class="brand-icon-lg">G</div>
-        <h1>Welcome back</h1>
-        <p class="text-muted">Sign in to Genesis</p>
+        <h1>Create account</h1>
+        <p class="text-muted">Get started with Genesis</p>
       </div>
 
       <!-- SSO Buttons -->
@@ -12,35 +12,40 @@
         <a v-for="provider in ssoProviders" :key="provider"
            :href="ssoUrl(provider)" class="btn-sso">
           <SSOIcon :provider="provider" />
-          Continue with {{ capitalize(provider) }}
+          Sign up with {{ capitalize(provider) }}
         </a>
         <div class="divider">or</div>
       </div>
 
-      <!-- Native Login Form -->
-      <form @submit.prevent="handleLogin" class="stack">
+      <form @submit.prevent="handleRegister" class="stack">
         <div class="form-group">
           <label for="username">Username</label>
           <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="Enter your username" required />
+                 placeholder="Choose a username" required />
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input v-model="email" id="email" type="email" class="form-input"
+                 placeholder="you@example.com" required />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="Enter your password" required />
+                 placeholder="Min 12 chars, upper, lower, number, special" required />
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>
+        <div v-if="success" class="alert alert-success">{{ success }}</div>
 
         <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>Sign In</span>
+          <span v-else>Create Account</span>
         </button>
       </form>
 
       <p class="text-center text-sm mt-lg text-muted">
-        Don't have an account?
-        <router-link to="/register" class="link">Create one</router-link>
+        Already have an account?
+        <router-link to="/login" class="link">Sign in</router-link>
       </p>
     </div>
   </div>
@@ -52,10 +57,10 @@ import api from '@/api';
 import SSOIcon from '@/components/SSOIcon.vue';
 
 export default {
-  name: 'LoginView',
+  name: 'RegisterView',
   components: { SSOIcon },
   data() {
-    return { username: '', password: '', error: '', loading: false };
+    return { username: '', email: '', password: '', error: '', success: '', loading: false };
   },
   computed: {
     ...mapState(['ssoProviders']),
@@ -65,12 +70,15 @@ export default {
   },
   methods: {
     ...mapActions(['login', 'fetchSSOProviders']),
-    async handleLogin() {
+    async handleRegister() {
       this.error = '';
+      this.success = '';
       this.loading = true;
       try {
+        await api.register(this.username, this.email, this.password);
+        // Auto-login after registration
         await this.login({ username: this.username, password: this.password });
-        this.$router.push('/profile');
+        this.$router.push('/profile/create');
       } catch (e) {
         this.error = e.message;
       } finally {
