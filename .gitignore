@@ -30,3 +30,11 @@ archive.zip
 # macOS
 .DS_Store
 .env
+.env.local
+
+# Secrets & uploads
+secrets/
+uploads/
+
+# Alembic
+alembic/versions/__pycache__
