@@ -2,9 +2,9 @@
   <div class="page-center">
     <div class="auth-card card">
       <div class="auth-header">
-        <div class="brand-icon-lg">G</div>
-        <h1>Set up your profile</h1>
-        <p class="text-muted">Tell us a bit about yourself</p>
+        <div class="brand-mark">&gt;_</div>
+        <h1>genesis<span class="accent">_profile</span></h1>
+        <p class="text-muted">initialize your identity</p>
       </div>
 
       <form @submit.prevent="handleCreate" class="stack">
@@ -19,9 +19,9 @@
                  placeholder="Doe" required />
         </div>
         <div class="form-group">
-          <label for="nick_name">Nickname <span class="text-muted">(optional)</span></label>
+          <label for="nick_name">Handle <span class="text-muted">(optional)</span></label>
           <input v-model="form.nick_name" id="nick_name" class="form-input"
-                 placeholder="jdoe" />
+                 placeholder="0xjdoe" />
         </div>
         <div class="form-group">
           <label for="locale">Locale <span class="text-muted">(optional)</span></label>
@@ -38,7 +38,7 @@
 
         <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>Complete Setup</span>
+          <span v-else>Initialize Profile</span>
         </button>
       </form>
     </div>
@@ -67,10 +67,7 @@ export default {
       this.loading = true;
       try {
         const username = this.currentUser?.username || 'user';
-        await this.createProfile({
-          ...this.form,
-          sub: username,
-        });
+        await this.createProfile({ ...this.form, sub: username });
         this.$router.push('/profile');
       } catch (e) {
         this.error = e.message;
@@ -83,10 +80,7 @@ export default {
 </script>
 
 <style scoped>
-.auth-card {
-  width: 100%;
-  max-width: 440px;
-}
+.auth-card { width: 100%; max-width: 440px; }
 
 .auth-header {
   text-align: center;
@@ -94,21 +88,27 @@ export default {
 }
 
 .auth-header h1 {
+  font-family: var(--font-mono);
   font-size: var(--text-2xl);
   font-weight: 600;
+  color: var(--text-primary);
   margin-top: var(--space-md);
 }
 
-.brand-icon-lg {
-  width: 48px;
-  height: 48px;
+.accent { color: var(--accent); }
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-lg);
-  background: var(--accent-gradient);
-  color: var(--text-on-accent);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: var(--text-xl);
+  font-family: var(--font-mono);
 }
 </style>

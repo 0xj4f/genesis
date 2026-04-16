@@ -2,9 +2,9 @@
   <div class="page-center">
     <div class="auth-card card">
       <div class="auth-header">
-        <div class="brand-icon-lg">G</div>
-        <h1>Welcome back</h1>
-        <p class="text-muted">Sign in to Genesis</p>
+        <div class="brand-mark">&gt;_</div>
+        <h1>genesis<span class="accent">_login</span></h1>
+        <p class="text-muted">authenticate to continue</p>
       </div>
 
       <!-- SSO Buttons -->
@@ -14,7 +14,7 @@
           <SSOIcon :provider="provider" />
           Continue with {{ capitalize(provider) }}
         </a>
-        <div class="divider">or</div>
+        <div class="divider">or sign in with credentials</div>
       </div>
 
       <!-- Native Login Form -->
@@ -22,25 +22,25 @@
         <div class="form-group">
           <label for="username">Username</label>
           <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="Enter your username" required />
+                 placeholder="enter username" required />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="Enter your password" required />
+                 placeholder="enter password" required />
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>
 
         <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>Sign In</span>
+          <span v-else>Authenticate</span>
         </button>
       </form>
 
       <p class="text-center text-sm mt-lg text-muted">
-        Don't have an account?
-        <router-link to="/register" class="link">Create one</router-link>
+        No account?
+        <router-link to="/register" class="link">Register</router-link>
       </p>
     </div>
   </div>
@@ -90,7 +90,7 @@ export default {
 <style scoped>
 .auth-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .auth-header {
@@ -99,21 +99,29 @@ export default {
 }
 
 .auth-header h1 {
+  font-family: var(--font-mono);
   font-size: var(--text-2xl);
   font-weight: 600;
+  color: var(--text-primary);
   margin-top: var(--space-md);
 }
 
-.brand-icon-lg {
-  width: 48px;
-  height: 48px;
+.accent {
+  color: var(--accent);
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-lg);
-  background: var(--accent-gradient);
-  color: var(--text-on-accent);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: var(--text-xl);
+  font-family: var(--font-mono);
 }
 </style>

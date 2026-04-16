@@ -2,9 +2,9 @@
   <div class="page-center">
     <div class="auth-card card">
       <div class="auth-header">
-        <div class="brand-icon-lg">G</div>
-        <h1>Create account</h1>
-        <p class="text-muted">Get started with Genesis</p>
+        <div class="brand-mark">&gt;_</div>
+        <h1>genesis<span class="accent">_register</span></h1>
+        <p class="text-muted">create a new identity</p>
       </div>
 
       <!-- SSO Buttons -->
@@ -14,24 +14,24 @@
           <SSOIcon :provider="provider" />
           Sign up with {{ capitalize(provider) }}
         </a>
-        <div class="divider">or</div>
+        <div class="divider">or register with credentials</div>
       </div>
 
       <form @submit.prevent="handleRegister" class="stack">
         <div class="form-group">
           <label for="username">Username</label>
           <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="Choose a username" required />
+                 placeholder="choose a handle" required />
         </div>
         <div class="form-group">
           <label for="email">Email</label>
           <input v-model="email" id="email" type="email" class="form-input"
-                 placeholder="you@example.com" required />
+                 placeholder="you@domain.com" required />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="Min 12 chars, upper, lower, number, special" required />
+                 placeholder="min 12 chars, mixed case, number, symbol" required />
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>
@@ -39,13 +39,13 @@
 
         <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
-          <span v-else>Create Account</span>
+          <span v-else>Create Identity</span>
         </button>
       </form>
 
       <p class="text-center text-sm mt-lg text-muted">
-        Already have an account?
-        <router-link to="/login" class="link">Sign in</router-link>
+        Already registered?
+        <router-link to="/login" class="link">Authenticate</router-link>
       </p>
     </div>
   </div>
@@ -76,7 +76,6 @@ export default {
       this.loading = true;
       try {
         await api.register(this.username, this.email, this.password);
-        // Auto-login after registration
         await this.login({ username: this.username, password: this.password });
         this.$router.push('/profile/create');
       } catch (e) {
@@ -98,7 +97,7 @@ export default {
 <style scoped>
 .auth-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .auth-header {
@@ -107,21 +106,29 @@ export default {
 }
 
 .auth-header h1 {
+  font-family: var(--font-mono);
   font-size: var(--text-2xl);
   font-weight: 600;
+  color: var(--text-primary);
   margin-top: var(--space-md);
 }
 
-.brand-icon-lg {
-  width: 48px;
-  height: 48px;
+.accent {
+  color: var(--accent);
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-lg);
-  background: var(--accent-gradient);
-  color: var(--text-on-accent);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: var(--text-xl);
+  font-family: var(--font-mono);
 }
 </style>
