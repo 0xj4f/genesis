@@ -1,132 +1,145 @@
 from fastapi import HTTPException, Depends, status
 from sqlalchemy.orm import Session
-from datetime import timedelta, datetime
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from datetime import timedelta, datetime, timezone
+from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from app.database.user_db_interface import get_user_by_username_db
-from app.models.user_api_model import User, Token, TokenData, UserMinimal
-from app.utils.security import verify_password, hash_password
-
+from app.database.user_db_interface import get_user_by_username_db, get_user_by_id_db
+from app.models.user_api_model import User, TokenData, UserMinimal
+from app.utils.security import verify_password
 from app.database.session import get_db
-import os, uuid
+from app.config import get_settings
+from app.auth.keys import get_signing_key, get_verification_key_by_kid
+import uuid
 
-
+settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-ISSUER = os.getenv("OAUTH_ISSUER", "https://auth.local")  # set to your base URL
-AUDIENCE = os.getenv("OAUTH_DEFAULT_AUDIENCE", "genesis-api")
-SECRET_KEY = os.getenv("OAUTH_SECRET_KEY","0f2883258b3c2cb9e21f1bdc827eafb9b7ad5509bf37103f82a1abab9109c65a") # openssl rand -hex 32
-ALGORITHM = os.getenv("OAUTH_ALGORITHM","HS256") # JWT algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "30")) # openssl rand -hex 32
 
 
 def authenticate_user(db: Session, username: str, password: str):
     user = get_user_by_username_db(db, username)
-    if not user or not verify_password(password, user.password):
+    if not user or not user.password or not verify_password(password, user.password):
         return False
     return user
 
-from datetime import timedelta, datetime, timezone
 
-def create_token(data: dict, expires_delta: timedelta) -> str:
+def create_token(data: dict, expires_delta: timedelta, token_type: str = "access") -> tuple[str, str]:
+    kid, key, algorithm = get_signing_key()
     now = datetime.now(timezone.utc)
+
+    # Allow caller to pre-assign a JTI (for session binding)
+    jti = data.pop("jti_override", None) or str(uuid.uuid4())
+
     to_encode = {
-        "iss": ISSUER,
-        "aud": AUDIENCE,
+        "iss": settings.OAUTH_ISSUER,
+        "aud": data.get("aud", [settings.OAUTH_DEFAULT_AUDIENCE]),
         "iat": int(now.timestamp()),
         "nbf": int(now.timestamp()),
         "exp": int((now + expires_delta).timestamp()),
-        "jti": str(uuid.uuid4()),
-        **data,
+        "jti": jti,
+        **{k: v for k, v in data.items() if k != "aud"},
     }
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def create_access_token(data: dict) -> str:
-    return create_token(data, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    if token_type == "refresh":
+        to_encode["token_type"] = "refresh"
 
-def create_refresh_token(data: dict) -> str:
-    return create_token(data, timedelta(days=7))  # Example: 7 days validity for refresh token
+    headers = {"kid": kid} if kid else {}
 
-def decode_token(token: str) -> dict:
-    """
-    to add more token validation in the future
+    encoded = jwt.encode(to_encode, key, algorithm=algorithm, headers=headers)
+    return encoded, jti
+
+
+def create_access_token(data: dict) -> tuple[str, str]:
+    """Returns (token, jti)."""
+    return create_token(data, timedelta(minutes=settings.OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES), token_type="access")
+
+
+def create_refresh_token(data: dict) -> tuple[str, str]:
+    """Returns (token, jti)."""
+    return create_token(data, timedelta(days=settings.OAUTH_REFRESH_TOKEN_TTL_DAYS), token_type="refresh")
+
+
+def decode_token(token: str, expected_type: str = "access") -> dict:
+    """Decode and validate a JWT token.
+
+    Args:
+        token: The JWT string
+        expected_type: "access" or "refresh" - validates token_type claim
     """
     try:
+        # Decode header to get kid
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid", "")
+
+        # Resolve verification key
+        key_result = get_verification_key_by_kid(kid)
+        if key_result is None:
+            raise HTTPException(status_code=401, detail="Unknown signing key")
+
+        key, algorithm = key_result
+
+        # Decode with full validation
         decoded = jwt.decode(
             token,
-            SECRET_KEY,              # later: public key(s) selection by kid
-            algorithms=[ALGORITHM],
-            audience=AUDIENCE,
-            issuer=ISSUER,
+            key,
+            algorithms=[algorithm],
+            audience=settings.OAUTH_DEFAULT_AUDIENCE,
+            issuer=settings.OAUTH_ISSUER,
             options={"require_exp": True, "require_iat": True, "require_nbf": True},
         )
+
+        # Validate token type
+        token_type = decoded.get("token_type", "access")
+        if expected_type == "refresh" and token_type != "refresh":
+            raise HTTPException(status_code=401, detail="Expected refresh token")
+        if expected_type == "access" and token_type == "refresh":
+            raise HTTPException(status_code=401, detail="Refresh token cannot be used as access token")
+
         return decoded
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
 def oauth_authenticate_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
-    """
-    - validate the token first
-    - check if the user exist
-    - check if the user is disabled 
-    - return user db object 
-    """
-    print(f"token: {token}")
+    """Validate access token and return the authenticated user."""
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    username: str = decode_token(token=token).get("sub")
-    print(token)
-    print(username)
-    try:
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-        user = get_user_by_username_db(db=db, username=token_data.username)
-        print(f"db user: {user}")
-    except JWTError:
+    payload = decode_token(token=token, expected_type="access")
+    user_id: str = payload.get("sub")
+
+    if user_id is None:
         raise credentials_exception
-    
+
+    user = get_user_by_id_db(db=db, user_id=user_id)
+
     if user is None:
         raise credentials_exception
-    if user.disabled:
-        raise HTTPException(status_code=400, detail="User is deactivated")
+    if user.disabled or not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is deactivated")
     return user
 
+
 def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> UserMinimal:
+    """Validate token for internal service-to-service calls."""
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(token=token)  # Assumes decode_token decodes the token and extracts the payload
-    print(payload)
-    user_id = payload.get("user_id")
-    username = payload.get("sub")
+    payload = decode_token(token=token, expected_type="access")
+    user_id = payload.get("sub")
+    # For backwards compat, also check user_id claim
+    if not user_id:
+        user_id = payload.get("user_id")
+    username = payload.get("username", "")
 
-    if not user_id or not username:
+    if not user_id:
         raise credentials_exception
 
     return UserMinimal(user_id=user_id, username=username)
-
-"""
-test scripts
-
-
-- create user 
-{
-    username: disabled
-    email: disabled@dev.com
-    password: HelloWorld123!
-} print if existing and make it ok
-- update user disabled = True
-- get user by user id, check if disabled and print
-- test /token endpoint for login
-- test /user/me, response should be raise HTTPException(status_code=400, detail="User is deactivated")
-
-"""

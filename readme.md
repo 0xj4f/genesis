@@ -12,7 +12,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install "fastapi[all]" # main dependency 
 pip install sqlalchemy "databases[mysql]" pymysql alembic # database
-pip install bcrypt python-jose pyjwt # authentication
+pip install bcrypt python-jose pyjwt cryptography # authentication
 
 ```
 
