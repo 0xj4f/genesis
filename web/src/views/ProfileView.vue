@@ -56,13 +56,17 @@
               <span class="detail-label">Nickname</span>
               <span class="detail-value">{{ profile.nick_name }}</span>
             </div>
-            <div class="detail-row" v-if="profile.locale">
-              <span class="detail-label">Locale</span>
-              <span class="detail-value">{{ profile.locale }}</span>
+            <div class="detail-row" v-if="profile.date_of_birth">
+              <span class="detail-label">Date of Birth</span>
+              <span class="detail-value">{{ profile.date_of_birth }}</span>
             </div>
-            <div class="detail-row" v-if="profile.timezone">
-              <span class="detail-label">Timezone</span>
-              <span class="detail-value">{{ profile.timezone }}</span>
+            <div class="detail-row" v-if="profile.mobile_number">
+              <span class="detail-label">Mobile</span>
+              <span class="detail-value">{{ profile.mobile_number }}</span>
+            </div>
+            <div class="detail-row" v-if="profile.address_line1">
+              <span class="detail-label">Address</span>
+              <span class="detail-value">{{ formatAddress }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">Account type</span>
@@ -93,12 +97,40 @@
                 <input v-model="form.nick_name" class="form-input" placeholder="Optional" />
               </div>
               <div class="form-group">
-                <label>Locale</label>
-                <input v-model="form.locale" class="form-input" placeholder="e.g. en-US" />
+                <label>Date of Birth</label>
+                <input v-model="form.date_of_birth" type="date" class="form-input" />
               </div>
               <div class="form-group">
-                <label>Timezone</label>
-                <input v-model="form.timezone" class="form-input" placeholder="e.g. America/New_York" />
+                <label>Mobile Number</label>
+                <input v-model="form.mobile_number" class="form-input" placeholder="+1 555 123 4567" />
+              </div>
+              <div class="form-group">
+                <label>Address</label>
+                <input v-model="form.address_line1" class="form-input" placeholder="Street address" />
+              </div>
+              <div class="form-group">
+                <label>Address Line 2</label>
+                <input v-model="form.address_line2" class="form-input" placeholder="Apt, suite, unit" />
+              </div>
+              <div class="row">
+                <div class="form-group" style="flex:1">
+                  <label>City</label>
+                  <input v-model="form.city" class="form-input" />
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label>State</label>
+                  <input v-model="form.state" class="form-input" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="form-group" style="flex:1">
+                  <label>Zip Code</label>
+                  <input v-model="form.zip_code" class="form-input" />
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label>Country</label>
+                  <input v-model="form.country" class="form-input" />
+                </div>
               </div>
               <div v-if="editError" class="alert alert-error">{{ editError }}</div>
               <div class="row">
@@ -170,6 +202,11 @@ export default {
     ...mapGetters(['hasProfile', 'initials', 'userProfile', 'currentUser']),
     ...mapState(['ssoProviders']),
     profile() { return this.userProfile || {}; },
+    formatAddress() {
+      const p = this.profile;
+      const parts = [p.address_line1, p.address_line2, p.city, p.state, p.zip_code, p.country].filter(Boolean);
+      return parts.join(', ');
+    },
     user() { return this.currentUser; },
     availableToLink() {
       const linked = this.linkedProviders.map(l => l.provider);
@@ -192,8 +229,14 @@ export default {
         given_name: this.profile.given_name || '',
         family_name: this.profile.family_name || '',
         nick_name: this.profile.nick_name || '',
-        locale: this.profile.locale || '',
-        timezone: this.profile.timezone || '',
+        date_of_birth: this.profile.date_of_birth || '',
+        mobile_number: this.profile.mobile_number || '',
+        address_line1: this.profile.address_line1 || '',
+        address_line2: this.profile.address_line2 || '',
+        city: this.profile.city || '',
+        state: this.profile.state || '',
+        zip_code: this.profile.zip_code || '',
+        country: this.profile.country || '',
       };
       this.editing = true;
     },

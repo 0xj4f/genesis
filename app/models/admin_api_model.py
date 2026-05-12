@@ -45,8 +45,14 @@ class AdminUserProfile(BaseModel):
     family_name: Optional[str] = None
     nick_name: Optional[str] = None
     picture: Optional[str] = None
-    locale: Optional[str] = None
-    timezone: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    mobile_number: Optional[str] = None
+    phone_verified: Optional[bool] = False
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True

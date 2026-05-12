@@ -8,30 +8,60 @@
       </div>
 
       <form @submit.prevent="handleCreate" class="stack">
-        <div class="form-group">
-          <label for="given_name">First Name</label>
-          <input v-model="form.given_name" id="given_name" class="form-input"
-                 placeholder="Jane" required />
+        <div class="row">
+          <div class="form-group" style="flex:1">
+            <label>First Name</label>
+            <input v-model="form.given_name" class="form-input" placeholder="Jane" required />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Last Name</label>
+            <input v-model="form.family_name" class="form-input" placeholder="Doe" required />
+          </div>
         </div>
         <div class="form-group">
-          <label for="family_name">Last Name</label>
-          <input v-model="form.family_name" id="family_name" class="form-input"
-                 placeholder="Doe" required />
+          <label>Nickname <span class="text-muted">(optional)</span></label>
+          <input v-model="form.nick_name" class="form-input" placeholder="0xjdoe" />
+        </div>
+        <div class="row">
+          <div class="form-group" style="flex:1">
+            <label>Date of Birth</label>
+            <input v-model="form.date_of_birth" type="date" class="form-input" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Mobile</label>
+            <input v-model="form.mobile_number" class="form-input" placeholder="+1 555 123 4567" />
+          </div>
+        </div>
+
+        <div class="divider">address</div>
+
+        <div class="form-group">
+          <label>Address Line 1</label>
+          <input v-model="form.address_line1" class="form-input" placeholder="123 Main St" />
         </div>
         <div class="form-group">
-          <label for="nick_name">Handle <span class="text-muted">(optional)</span></label>
-          <input v-model="form.nick_name" id="nick_name" class="form-input"
-                 placeholder="0xjdoe" />
+          <label>Address Line 2 <span class="text-muted">(optional)</span></label>
+          <input v-model="form.address_line2" class="form-input" placeholder="Apt 4B" />
         </div>
-        <div class="form-group">
-          <label for="locale">Locale <span class="text-muted">(optional)</span></label>
-          <input v-model="form.locale" id="locale" class="form-input"
-                 placeholder="en-US" />
+        <div class="row">
+          <div class="form-group" style="flex:1">
+            <label>City</label>
+            <input v-model="form.city" class="form-input" placeholder="New York" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>State</label>
+            <input v-model="form.state" class="form-input" placeholder="NY" />
+          </div>
         </div>
-        <div class="form-group">
-          <label for="timezone">Timezone <span class="text-muted">(optional)</span></label>
-          <input v-model="form.timezone" id="timezone" class="form-input"
-                 placeholder="America/New_York" />
+        <div class="row">
+          <div class="form-group" style="flex:1">
+            <label>Zip Code</label>
+            <input v-model="form.zip_code" class="form-input" placeholder="10001" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Country</label>
+            <input v-model="form.country" class="form-input" placeholder="US" />
+          </div>
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>
@@ -52,7 +82,12 @@ export default {
   name: 'CreateProfileView',
   data() {
     return {
-      form: { given_name: '', family_name: '', nick_name: '', locale: '', timezone: '' },
+      form: {
+        given_name: '', family_name: '', nick_name: '',
+        date_of_birth: '', mobile_number: '',
+        address_line1: '', address_line2: '',
+        city: '', state: '', zip_code: '', country: '',
+      },
       error: '',
       loading: false,
     };
@@ -67,7 +102,13 @@ export default {
       this.loading = true;
       try {
         const username = this.currentUser?.username || 'user';
-        await this.createProfile({ ...this.form, sub: username });
+        const payload = { ...this.form, sub: username };
+        // Remove empty optional fields
+        Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
+        payload.given_name = this.form.given_name;
+        payload.family_name = this.form.family_name;
+        payload.sub = username;
+        await this.createProfile(payload);
         this.$router.push('/profile');
       } catch (e) {
         this.error = e.message;
@@ -80,7 +121,7 @@ export default {
 </script>
 
 <style scoped>
-.auth-card { width: 100%; max-width: 440px; }
+.auth-card { width: 100%; max-width: 500px; }
 
 .auth-header {
   text-align: center;

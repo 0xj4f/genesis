@@ -38,6 +38,9 @@ def delete_user_by_id_db(db: Session, user_id: str):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return None
+    # Clean up non-cascaded FKs
+    from app.models.authz_code_db_model import AuthorizationCode
+    db.query(AuthorizationCode).filter(AuthorizationCode.user_id == user_id).delete()
     db.delete(user)
     db.commit()
     return user

@@ -85,8 +85,14 @@ def get_user_detail(db: Session, user_id: str) -> dict:
             "family_name": profile.family_name,
             "nick_name": profile.nick_name,
             "picture": profile.picture,
-            "locale": profile.locale,
-            "timezone": profile.timezone,
+            "date_of_birth": str(profile.date_of_birth) if profile.date_of_birth else None,
+            "mobile_number": profile.mobile_number,
+            "phone_verified": profile.phone_verified,
+            "address_line1": profile.address_line1,
+            "city": profile.city,
+            "state": profile.state,
+            "zip_code": profile.zip_code,
+            "country": profile.country,
         }
 
     linked = [
