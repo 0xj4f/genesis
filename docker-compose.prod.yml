@@ -1,0 +1,83 @@
+# Genesis IAM - Production Compose
+#
+# Usage:
+#   TAG=0.2.0 docker compose -f docker-compose.prod.yml up -d
+#
+# Or with latest:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# First run prints ROOT (Adam) credentials in API logs:
+#   docker compose -f docker-compose.prod.yml logs api | grep -A 5 "ROOT USER"
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-genesis_root_secret}
+      MYSQL_DATABASE: ${DB_NAME:-genesis}
+      MYSQL_USER: ${DB_USER:-genesis_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-genesis_password_change_me}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: 0xj4f/genesis:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8001}:8000"
+    environment:
+      # Database
+      MYSQL_DEV_USER: ${DB_USER:-genesis_user}
+      MYSQL_DEV_PASSWORD: ${DB_PASSWORD:-genesis_password_change_me}
+      DATABASE_HOST: db
+      DATABASE_PORT: "3306"
+      DATABASE_NAME: ${DB_NAME:-genesis}
+      # JWT
+      OAUTH_ISSUER: ${OAUTH_ISSUER:-http://localhost:8001}
+      OAUTH_ALGORITHM: RS256
+      OAUTH_DEFAULT_AUDIENCE: ${OAUTH_AUDIENCE:-genesis-api}
+      OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${TOKEN_TTL_MINUTES:-30}
+      OAUTH_REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TTL_DAYS:-30}
+      OAUTH_SECRET_KEY: ${OAUTH_SECRET_KEY:-please_change_this_in_production}
+      OAUTH_PRIVATE_KEY_PATH: ./secrets/dev-private.pem
+      OAUTH_PUBLIC_KEY_PATH: ./secrets/dev-public.pem
+      OAUTH_JWT_KID: ${JWT_KID:-genesis-1}
+      # CORS
+      CORS_ALLOW_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082}
+      # Sessions
+      MAX_CONCURRENT_SESSIONS: ${MAX_SESSIONS:-5}
+      # SSO (set these to enable social login)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
+      # Storage
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      UPLOAD_DIR: ./uploads
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+
+  web:
+    image: 0xj4f/genesis-web:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8082}:80"
+    depends_on:
+      - api
+
+volumes:
+  mysql_data:
+  uploads:
