@@ -12,6 +12,7 @@ jobs:
   tag-and-push:
     name: Build, Tag & Push
     runs-on: ubuntu-latest
+    environment: Development
 
     steps:
       - uses: actions/checkout@v4
