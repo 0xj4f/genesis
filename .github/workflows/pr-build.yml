@@ -1,0 +1,51 @@
+name: PR Build Check
+
+on:
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-api:
+    name: Build API Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build genesis API
+        run: docker build -f Dockerfile -t 0xj4f/genesis:pr-test .
+
+  build-web:
+    name: Build Web Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build genesis-web
+        run: docker build -f web/Dockerfile -t 0xj4f/genesis-web:pr-test ./web
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [build-api, build-web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & start stack
+        run: |
+          docker compose -f docker-compose.yml build
+          docker compose -f docker-compose.yml up -d
+          sleep 15
+
+      - name: Health check
+        run: |
+          curl -sf http://localhost:8001/health
+          curl -sf http://localhost:8082/
+
+      - name: Run E2E tests
+        run: |
+          pip install requests
+          python tests/test_e2e.py
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.yml down -v

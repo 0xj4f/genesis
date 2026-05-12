@@ -34,6 +34,11 @@ app.include_router(sso_router, prefix="", tags=["sso"])
 app.include_router(oidc_router, prefix="", tags=["oidc"])
 app.include_router(admin_router, prefix="", tags=["admin"])
 
+
+@app.get("/health", tags=["system"])
+def health_check():
+    return {"status": "ok", "service": "genesis-iam"}
+
 # Serve uploaded avatars as static files (local storage backend)
 avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
 os.makedirs(avatars_dir, exist_ok=True)

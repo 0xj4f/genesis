@@ -283,8 +283,8 @@ def get_userinfo(db: Session, user_id: str, scopes: list[str]) -> dict:
                 result["nickname"] = profile.nick_name
             if profile.picture:
                 result["picture"] = profile.picture
-            if profile.locale:
-                result["locale"] = profile.locale
+            if profile.phone_verified is not None:
+                result["phone_number_verified"] = profile.phone_verified
             result["updated_at"] = int(profile.updated_at.timestamp()) if profile.updated_at else None
         else:
             result["name"] = user.username

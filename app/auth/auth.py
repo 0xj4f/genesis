@@ -124,6 +124,25 @@ def oauth_authenticate_current_user(
     return user
 
 
+def require_role(*allowed_roles):
+    """Factory that returns a FastAPI dependency enforcing role-based access.
+
+    Usage: current_user=Depends(require_role("admin", "root"))
+    """
+    async def _check(
+        token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    ):
+        user = oauth_authenticate_current_user(token, db)
+        if user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return user
+    return _check
+
+
+require_admin = require_role("admin", "root")
+require_root = require_role("root")
+
+
 def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> UserMinimal:
     """Validate token for internal service-to-service calls."""
     credentials_exception = HTTPException(

@@ -65,6 +65,7 @@ class User(BaseModel):
     is_native: Optional[bool] = True
     last_login_at: Optional[datetime] = None
     last_login_method: Optional[str] = None
+    role: Optional[str] = "user"
     created_at: Optional[datetime] = None
     last_modified: Optional[datetime] = None
 
