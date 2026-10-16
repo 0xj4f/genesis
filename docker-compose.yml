@@ -41,6 +41,8 @@ services:
       CORS_ALLOW_ORIGINS: "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8082"
       # Sessions
       MAX_CONCURRENT_SESSIONS: "5"
+      RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-30}
+      AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-10}
       # Storage
       STORAGE_BACKEND: local
       UPLOAD_DIR: ./uploads

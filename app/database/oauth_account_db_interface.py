@@ -1,11 +1,17 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 from app.models.oauth_account_db_model import OAuthAccount
 
 
 def create_oauth_account_db(db: Session, data: dict) -> OAuthAccount:
     account = OAuthAccount(**data)
     db.add(account)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="SSO account is already linked or registered")
     db.refresh(account)
     return account
 

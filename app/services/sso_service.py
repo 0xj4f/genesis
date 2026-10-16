@@ -5,6 +5,9 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from uuid import uuid4
+from urllib.parse import urlencode
+from sqlalchemy.exc import IntegrityError
+from app.utils.security_store import get_security_store, SecurityStoreUnavailable
 
 import httpx
 from fastapi import HTTPException, Request
@@ -28,10 +31,6 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# In-memory state store for CSRF protection (use Redis/DB in production at scale)
-_sso_states: dict[str, dict] = {}
-
-
 def generate_authorize_url(provider_name: str, action: str = "login", user_id: str | None = None) -> tuple[str, str]:
     """Build the provider's authorization URL with state parameter.
 
@@ -40,12 +39,16 @@ def generate_authorize_url(provider_name: str, action: str = "login", user_id: s
     provider = get_provider(provider_name)
 
     state = secrets.token_urlsafe(32)
-    _sso_states[state] = {
+    state_data = {
         "provider": provider_name,
         "action": action,  # "login" or "link"
         "user_id": user_id,  # set when action=link
         "created_at": datetime.utcnow().isoformat(),
     }
+    try:
+        get_security_store().put_state(state, state_data, 600)
+    except SecurityStoreUnavailable:
+        raise HTTPException(status_code=503, detail="Security service temporarily unavailable")
 
     params = {
         "client_id": provider.client_id,
@@ -60,13 +63,16 @@ def generate_authorize_url(provider_name: str, action: str = "login", user_id: s
         params["access_type"] = "offline"
         params["prompt"] = "consent"
 
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return f"{provider.authorize_url}?{query}", state
 
 
 def validate_state(state: str) -> dict:
     """Validate and consume a state parameter. Returns state data or raises."""
-    state_data = _sso_states.pop(state, None)
+    try:
+        state_data = get_security_store().pop_state(state)
+    except SecurityStoreUnavailable:
+        raise HTTPException(status_code=503, detail="Security service temporarily unavailable")
     if not state_data:
         raise HTTPException(status_code=400, detail="Invalid or expired state parameter")
 
@@ -127,7 +133,8 @@ async def fetch_userinfo(provider: OAuthProviderConfig, access_token: str) -> di
         userinfo = resp.json()
 
         # GitHub: email may not be in the user response, fetch from /user/emails
-        if provider.name == "github" and not userinfo.get("email"):
+        if provider.name == "github":
+            userinfo["email_verified"] = False
             emails_resp = await client.get("https://api.github.com/user/emails", headers=headers)
             if emails_resp.status_code == 200:
                 emails = emails_resp.json()
@@ -157,7 +164,7 @@ def _normalize_userinfo(provider: OAuthProviderConfig, raw: dict) -> dict:
     result = {
         "provider_user_id": str(_extract_field(raw, fm.get("sub", "sub")) or ""),
         "email": _extract_field(raw, fm.get("email", "email")),
-        "email_verified": raw.get("email_verified", False),
+        "email_verified": raw.get("email_verified") is True,
         "name": _extract_field(raw, fm.get("name", "name")) or "",
         "given_name": raw.get("given_name", ""),
         "family_name": raw.get("family_name", ""),
@@ -170,10 +177,6 @@ def _normalize_userinfo(provider: OAuthProviderConfig, raw: dict) -> dict:
         parts = result["name"].split(" ", 1)
         result["given_name"] = parts[0]
         result["family_name"] = parts[1] if len(parts) > 1 else ""
-
-    # GitHub treats verified emails from the emails endpoint
-    if provider.name == "github":
-        result["email_verified"] = True  # We only use verified emails from GitHub
 
     return result
 
@@ -209,6 +212,9 @@ async def handle_sso_callback(
 
     Returns token dict (access_token, refresh_token, token_type).
     """
+    cookie_state = request.cookies.get("genesis_sso_state", "") if request else ""
+    if not cookie_state or not secrets.compare_digest(cookie_state.encode("utf-8"), state.encode("utf-8")):
+        raise HTTPException(status_code=400, detail="SSO state does not match this browser")
     state_data = validate_state(state)
     provider = get_provider(provider_name)
 
@@ -270,13 +276,15 @@ def _handle_login_or_register(
     if userinfo.get("email"):
         existing_user = get_user_by_email_db(db, userinfo["email"])
         if existing_user:
-            if not existing_user.email_verified and userinfo.get("email_verified"):
+            if existing_user.disabled or not existing_user.is_active:
+                raise HTTPException(status_code=403, detail="User account is deactivated")
+            if not existing_user.email_verified and userinfo.get("email_verified") is True:
                 # Auto-verify since provider verified the email
                 existing_user.email_verified = True
                 existing_user.email_verified_at = datetime.utcnow()
                 db.commit()
 
-            if existing_user.email_verified or userinfo.get("email_verified"):
+            if userinfo.get("email_verified") is True:
                 # Auto-link
                 _create_oauth_account(
                     db, str(existing_user.id), provider, userinfo,
@@ -286,8 +294,8 @@ def _handle_login_or_register(
             else:
                 raise HTTPException(
                     status_code=409,
-                    detail="An account with this email exists but is not verified. "
-                    "Log in with your password and verify your email, then link this SSO provider.",
+                    detail="The provider has not verified this email. "
+                    "Sign in with your existing credentials, then link this SSO provider.",
                 )
 
     # Case C: Entirely new user
@@ -311,8 +319,11 @@ def _handle_login_or_register(
         is_native=False,
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Account already exists; please retry sign-in")
 
     # Create profile from provider data
     from app.models.profile_db_model import Profile as ProfileModel
@@ -326,7 +337,7 @@ def _handle_login_or_register(
         sub=str(new_user.id),
     )
     db.add(profile)
-    db.commit()
+    db.flush()
 
     # Create oauth_account link
     _create_oauth_account(
@@ -377,23 +388,26 @@ def _handle_link(
 
 def unlink_provider(db: Session, user_id: str, provider_name: str) -> dict:
     """Unlink an SSO provider from a user's account."""
-    oauth_account = get_oauth_account_by_user_and_provider_db(db, user_id, provider_name)
+    # Keep concurrent unlink requests from removing the last two login methods.
+    from app.models.user_db_model import User
+    from app.models.oauth_account_db_model import OAuthAccount
+    user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
+    if not user or user.disabled or not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is deactivated")
+    all_accounts = db.query(OAuthAccount).filter(OAuthAccount.user_id == user_id).with_for_update().populate_existing().all()
+    oauth_account = next((account for account in all_accounts if account.provider == provider_name), None)
     if not oauth_account:
         raise HTTPException(status_code=404, detail=f"{provider_name} is not linked to your account")
 
     # Prevent unlinking if user has no password (would lock them out)
-    from app.database.user_db_interface import get_user_by_id_db
-    user = get_user_by_id_db(db, user_id)
-    from app.database.oauth_account_db_interface import get_oauth_accounts_by_user_db
-    all_accounts = get_oauth_accounts_by_user_db(db, user_id)
-
     if not user.password and len(all_accounts) <= 1:
         raise HTTPException(
             status_code=400,
             detail="Cannot unlink the only authentication method. Set a password first.",
         )
 
-    delete_oauth_account_db(db, oauth_account.id)
+    db.delete(oauth_account)
+    db.commit()
     return {"message": f"{provider_name} account unlinked successfully"}
 
 

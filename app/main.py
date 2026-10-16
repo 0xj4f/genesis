@@ -2,6 +2,10 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from contextlib import asynccontextmanager
+from app.auth.keys import get_signing_key
+from app.middleware.security import SecurityMiddleware
 from app.config import get_settings
 from app.routes.users import router as user_router
 from app.routes.profiles import router as profile_router
@@ -16,7 +20,17 @@ settings = get_settings()
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL, logging.INFO))
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Genesis - Identity Access Management")
+@asynccontextmanager
+async def lifespan(app):
+    if settings.ENVIRONMENT == "production":
+        # Fail startup if signing keys are unavailable; never weaken auth.
+        get_signing_key()
+    yield
+
+
+app = FastAPI(title="Genesis - Identity Access Management", lifespan=lifespan)
+app.add_middleware(SecurityMiddleware, settings=settings)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
 app.add_middleware(
     CORSMiddleware,

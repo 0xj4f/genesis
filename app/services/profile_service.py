@@ -8,9 +8,13 @@ from app.database.profile_db_interface import (
 from fastapi import HTTPException
 from app.models.profile_api_model import ProfileCreate, ProfileUpdate
 from sqlalchemy.orm import Session
+from app.models.user_db_model import User
+from app.models.profile_db_model import Profile
 
 def create_profile_service(db: Session, profile_create: ProfileCreate):
-    existing_profile = get_profile_by_user_db(db, profile_create.user_id)
+    profile_create.user_id = str(profile_create.user_id)
+    db.query(User).filter(User.id == profile_create.user_id).with_for_update().first()
+    existing_profile = db.query(Profile).filter(Profile.user_id == profile_create.user_id).with_for_update().first()
     if existing_profile:
         raise HTTPException(status_code=400, detail="Profile already exists for this user")
 

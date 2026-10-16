@@ -1,11 +1,17 @@
 from sqlalchemy.orm import Session
 from app.models.oauth_client_db_model import OAuthClient
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 
 
 def create_oauth_client_db(db: Session, data: dict) -> OAuthClient:
     client = OAuthClient(**data)
     db.add(client)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="OAuth client name already exists")
     db.refresh(client)
     return client
 
@@ -32,6 +38,10 @@ def update_oauth_client_db(db: Session, client_id: str, update_data: dict) -> OA
     for key, value in update_data.items():
         if value is not None:
             setattr(client, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="OAuth client name already exists")
     db.refresh(client)
     return client

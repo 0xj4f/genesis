@@ -2,13 +2,15 @@ from fastapi import HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime, timezone
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+import jwt
+from jwt import InvalidTokenError
 from app.database.user_db_interface import get_user_by_username_db, get_user_by_id_db
 from app.models.user_api_model import User, TokenData, UserMinimal
 from app.utils.security import verify_password
 from app.database.session import get_db
 from app.config import get_settings
 from app.auth.keys import get_signing_key, get_verification_key_by_kid
+from app.models.session_db_model import Session as LoginSession
 import uuid
 
 settings = get_settings()
@@ -84,7 +86,7 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
             algorithms=[algorithm],
             audience=settings.OAUTH_DEFAULT_AUDIENCE,
             issuer=settings.OAUTH_ISSUER,
-            options={"require_exp": True, "require_iat": True, "require_nbf": True},
+            options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]},
         )
 
         # Validate token type
@@ -95,7 +97,7 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
             raise HTTPException(status_code=401, detail="Refresh token cannot be used as access token")
 
         return decoded
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
@@ -121,7 +123,22 @@ def oauth_authenticate_current_user(
         raise credentials_exception
     if user.disabled or not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
+    validate_access_session(db, payload)
     return user
+
+
+def validate_access_session(db: Session, payload: dict):
+    sid = payload.get("sid")
+    if not sid:
+        raise HTTPException(status_code=401, detail="Token is not bound to a session")
+    session = db.query(LoginSession).filter(
+        LoginSession.id == sid,
+        LoginSession.user_id == payload.get("sub"),
+        LoginSession.is_active == True,  # noqa: E712
+        LoginSession.expires_at > datetime.utcnow(),
+    ).first()
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired or revoked")
 
 
 def require_role(*allowed_roles):
@@ -143,7 +160,7 @@ require_admin = require_role("admin", "root")
 require_root = require_role("root")
 
 
-def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> UserMinimal:
+def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> UserMinimal:
     """Validate token for internal service-to-service calls."""
     credentials_exception = HTTPException(
         status_code=401,
@@ -160,5 +177,8 @@ def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme)) -> 
 
     if not user_id:
         raise credentials_exception
+
+    if payload.get("auth_method") != "client_credentials":
+        oauth_authenticate_current_user(token, db)
 
     return UserMinimal(user_id=user_id, username=username)

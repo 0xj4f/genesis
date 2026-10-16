@@ -1,6 +1,9 @@
 from app.models.user_db_model import User
 from app.models.user_api_model import UserCreate, UserUpdate
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
+from datetime import datetime
 
 
 def create_user_db(db: Session, user_create: UserCreate) -> User:
@@ -8,7 +11,11 @@ def create_user_db(db: Session, user_create: UserCreate) -> User:
     # password is already hashed by the service layer (plain string at this point)
     db_user = User(**data)
     db.add(db_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered or username already taken")
     db.refresh(db_user)
     return db_user
 
@@ -17,19 +24,35 @@ def get_all_users_db(db: Session):
     return db.query(User).all()
 
 
-def get_user_by_id_db(db: Session, user_id: str):
-    return db.query(User).filter(User.id == user_id).first()
+def get_user_by_id_db(db: Session, user_id: str, for_update: bool = False):
+    query = db.query(User).filter(User.id == user_id)
+    if for_update:
+        query = query.with_for_update().populate_existing()
+    return query.first()
 
 
 def update_user_by_id_db(db: Session, user_id: str, user_update: UserUpdate):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         return None
     update_data = user_update.model_dump(exclude_unset=True)
+    if update_data.get("email") and update_data["email"] != user.email:
+        # Verification belongs to the verified address, not arbitrary replacements.
+        user.email_verified = False
+        user.email_verified_at = None
     for key, value in update_data.items():
         if value is not None:
             setattr(user, key, value)
-    db.commit()
+    if update_data.get("password"):
+        from app.models.session_db_model import Session as LoginSession
+        db.query(LoginSession).filter(
+            LoginSession.user_id == user_id, LoginSession.is_active == True,  # noqa: E712
+        ).update({"is_active": False, "revoked_at": datetime.utcnow(), "revoked_reason": "password_changed"}, synchronize_session=False)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered or username already taken")
     db.refresh(user)
     return user
 
@@ -40,7 +63,9 @@ def delete_user_by_id_db(db: Session, user_id: str):
         return None
     # Clean up non-cascaded FKs
     from app.models.authz_code_db_model import AuthorizationCode
+    from app.models.profile_db_model import Profile
     db.query(AuthorizationCode).filter(AuthorizationCode.user_id == user_id).delete()
+    db.query(Profile).filter(Profile.user_id == user_id).delete()
     db.delete(user)
     db.commit()
     return user

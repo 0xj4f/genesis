@@ -20,9 +20,10 @@ def get_authz_code_db(db: Session, code: str) -> AuthorizationCode | None:
 
 
 def mark_authz_code_used_db(db: Session, code: str) -> bool:
-    authz_code = db.query(AuthorizationCode).filter(AuthorizationCode.code == code).first()
-    if not authz_code:
-        return False
-    authz_code.used = True
+    count = db.query(AuthorizationCode).filter(
+        AuthorizationCode.code == code,
+        AuthorizationCode.used == False,  # noqa: E712
+        AuthorizationCode.expires_at > datetime.utcnow(),
+    ).update({"used": True}, synchronize_session=False)
     db.commit()
-    return True
+    return count == 1

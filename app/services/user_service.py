@@ -13,10 +13,12 @@ from app.utils.security import hash_password
 from fastapi import HTTPException
 
 
-def validate_existing_user(db: Session, email: str = None, username: str = None):
-    if email and get_user_by_email_db(db, email):
+def validate_existing_user(db: Session, email: str = None, username: str = None, exclude_user_id: str = None):
+    email_user = get_user_by_email_db(db, email) if email else None
+    username_user = get_user_by_username_db(db, username) if username else None
+    if email_user and str(email_user.id) != exclude_user_id:
         raise HTTPException(status_code=400, detail="Email already registered")
-    if username and get_user_by_username_db(db, username):
+    if username_user and str(username_user.id) != exclude_user_id:
         raise HTTPException(status_code=400, detail="Username already taken")
 
 
@@ -30,14 +32,14 @@ def get_all_users_service(db: Session):
     return get_all_users_db(db)
 
 
-def get_user_by_id_service(db: Session, user_id: str):
-    return get_user_by_id_db(db, user_id)
+def get_user_by_id_service(db: Session, user_id: str, for_update: bool = False):
+    return get_user_by_id_db(db, user_id, for_update=for_update)
 
 
 def update_user_service(db: Session, user_id: str, user_update: UserUpdate):
     if user_update.password:
         user_update.password = hash_password(user_update.password.get_secret_value())
-    validate_existing_user(db, email=user_update.email, username=user_update.username)
+    validate_existing_user(db, email=user_update.email, username=user_update.username, exclude_user_id=str(user_id))
     return update_user_by_id_db(db, user_id, user_update)
 
 

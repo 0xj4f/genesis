@@ -4,6 +4,13 @@ __pycache__
 .git
 .env
 .env.local
+.env.*
+!.env.example
+secrets
+uploads
+.aws
+.codex
+.agents
 .pytest_cache
 .mypy_cache
 htmlcov

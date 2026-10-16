@@ -101,11 +101,17 @@ async def token_endpoint(
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Basic "):
             import base64
-            decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-            parts = decoded.split(":", 1)
-            if len(parts) == 2:
-                client_id = client_id or parts[0]
-                client_secret = client_secret or parts[1]
+            import binascii
+            from urllib.parse import unquote_plus
+            try:
+                decoded = base64.b64decode(auth_header[6:], validate=True).decode("utf-8")
+                basic_id, basic_secret = decoded.split(":", 1)
+                basic_id, basic_secret = unquote_plus(basic_id), unquote_plus(basic_secret)
+                if client_id and client_id != basic_id or client_secret and client_secret != basic_secret:
+                    raise ValueError("Conflicting credentials")
+                client_id, client_secret = basic_id, basic_secret
+            except (ValueError, UnicodeError, binascii.Error):
+                raise HTTPException(status_code=401, detail="Invalid client credentials")
 
     if grant_type == "authorization_code":
         if not code or not redirect_uri or not client_id:
@@ -140,6 +146,7 @@ def userinfo(
         raise HTTPException(status_code=401, detail="Bearer token required")
 
     payload = decode_token(token, expected_type="access")
+    oauth_authenticate_current_user(token, db)
     user_id = payload.get("sub")
     scope_str = payload.get("scope", "")
     scopes = scope_str.split()

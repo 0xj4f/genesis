@@ -66,6 +66,11 @@ def _load_keys():
         try:
             private_key = _load_private_key_from_file(settings.OAUTH_PRIVATE_KEY_PATH)
             public_key = _load_public_key_from_file(settings.OAUTH_PUBLIC_KEY_PATH)
+            if (not isinstance(private_key, rsa.RSAPrivateKey)
+                    or not isinstance(public_key, rsa.RSAPublicKey)
+                    or private_key.key_size < 2048
+                    or private_key.public_key().public_numbers() != public_key.public_numbers()):
+                raise ValueError("Signing keys must be a matching RSA key pair of at least 2048 bits")
             kid = settings.OAUTH_JWT_KID
             keys[kid] = {
                 "kid": kid,
@@ -92,6 +97,8 @@ def get_signing_key() -> tuple[str, object, str]:
             return kid, key_info["private_key"], key_info["algorithm"]
 
     # Fallback to HS256 with shared secret
+    if settings.ENVIRONMENT == "production":
+        raise RuntimeError("Production signing keys are unavailable")
     return "", settings.OAUTH_SECRET_KEY, "HS256"
 
 
@@ -114,7 +121,7 @@ def get_verification_key_by_kid(kid: str) -> Optional[tuple[object, str]]:
         return keys[kid]["public_key"], keys[kid]["algorithm"]
 
     # Fallback: if no kid match and we're using HS256
-    if not keys:
+    if not keys and settings.ENVIRONMENT != "production":
         return settings.OAUTH_SECRET_KEY, "HS256"
 
     return None

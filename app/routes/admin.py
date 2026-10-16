@@ -54,7 +54,7 @@ def analytics(current_user=Depends(require_admin), db: Session = Depends(get_db)
 def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    search: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, max_length=100),
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -83,7 +83,7 @@ def disable_user(user_id: str, current_user=Depends(require_admin), db: Session 
 
 @router.delete("/admin/users/{user_id}", tags=["admin"])
 def delete_user(user_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
-    user = get_user_by_id_db(db, user_id)
+    user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":

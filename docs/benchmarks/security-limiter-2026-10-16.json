@@ -1,0 +1,323 @@
+{
+  "date": "2026-10-16",
+  "runtime": {
+    "architecture": "aarch64",
+    "docker_vcpus": 8,
+    "docker_memory_bytes": 4179767296,
+    "python": "3.13",
+    "api_cpu_limit": 1,
+    "api_memory_mib": 512,
+    "load_generator_cpu_limit": 2,
+    "load_generator_memory_mib": 256,
+    "redis_cpu_limit": 1,
+    "redis_memory_mib": 128,
+    "http_parallel_connections": 32,
+    "http_repeats": 3,
+    "http_trial_seconds": 5,
+    "http_synthetic_active_keys": 9000,
+    "synthetic_key_ttl_seconds": 600,
+    "benchmark_per_ip_ceiling": 10000
+  },
+  "baseline_image": "sha256:8c570064299d8f1304aed32a785ccaea1a0cbf3e1e10b57f0c0596397f4f4973",
+  "http": {
+    "none": {
+      "host": "genesis-bench-none",
+      "median_p95_ms": 3.817,
+      "median_requests_per_second": 12162.4,
+      "paced_10_rps": {
+        "client_cpu_seconds": 0.039,
+        "latency_ms": {
+          "p50": 1.942,
+          "p95": 3.148,
+          "p99": 3.569
+        },
+        "requests": 50,
+        "requests_per_second": 10.0,
+        "seconds": 5.004,
+        "status_counts": {
+          "200": 50
+        }
+      },
+      "saturated_trials": [
+        {
+          "client_cpu_seconds": 1.239,
+          "latency_ms": {
+            "p50": 2.457,
+            "p95": 4.19,
+            "p99": 11.043
+          },
+          "requests": 56148,
+          "requests_per_second": 11226.4,
+          "seconds": 5.001,
+          "status_counts": {
+            "200": 56148
+          }
+        },
+        {
+          "client_cpu_seconds": 1.078,
+          "latency_ms": {
+            "p50": 2.404,
+            "p95": 3.711,
+            "p99": 7.259
+          },
+          "requests": 61581,
+          "requests_per_second": 12312.4,
+          "seconds": 5.002,
+          "status_counts": {
+            "200": 61581
+          }
+        },
+        {
+          "client_cpu_seconds": 1.074,
+          "latency_ms": {
+            "p50": 2.42,
+            "p95": 3.817,
+            "p99": 7.59
+          },
+          "requests": 60839,
+          "requests_per_second": 12162.4,
+          "seconds": 5.002,
+          "status_counts": {
+            "200": 60839
+          }
+        }
+      ]
+    },
+    "redis": {
+      "host": "genesis-bench-redis",
+      "median_p95_ms": 18.462,
+      "median_requests_per_second": 4161.6,
+      "paced_10_rps": {
+        "client_cpu_seconds": 0.038,
+        "latency_ms": {
+          "p50": 3.064,
+          "p95": 4.392,
+          "p99": 10.161
+        },
+        "requests": 50,
+        "requests_per_second": 10.0,
+        "seconds": 5.006,
+        "status_counts": {
+          "200": 50
+        }
+      },
+      "saturated_trials": [
+        {
+          "client_cpu_seconds": 0.619,
+          "latency_ms": {
+            "p50": 6.215,
+            "p95": 19.033,
+            "p99": 25.029
+          },
+          "requests": 20823,
+          "requests_per_second": 4161.6,
+          "seconds": 5.004,
+          "status_counts": {
+            "200": 20823
+          }
+        },
+        {
+          "client_cpu_seconds": 0.597,
+          "latency_ms": {
+            "p50": 6.232,
+            "p95": 18.462,
+            "p99": 28.832
+          },
+          "requests": 20303,
+          "requests_per_second": 4057.2,
+          "seconds": 5.004,
+          "status_counts": {
+            "200": 20303
+          }
+        },
+        {
+          "client_cpu_seconds": 0.607,
+          "latency_ms": {
+            "p50": 6.022,
+            "p95": 16.942,
+            "p99": 22.027
+          },
+          "requests": 22552,
+          "requests_per_second": 4505.8,
+          "seconds": 5.005,
+          "status_counts": {
+            "200": 22552
+          }
+        }
+      ]
+    },
+    "memory": {
+      "host": "genesis-bench-memory",
+      "median_p95_ms": 4.5,
+      "median_requests_per_second": 10430.5,
+      "paced_10_rps": {
+        "client_cpu_seconds": 0.039,
+        "latency_ms": {
+          "p50": 1.767,
+          "p95": 3.775,
+          "p99": 6.827
+        },
+        "requests": 50,
+        "requests_per_second": 10.0,
+        "seconds": 5.003,
+        "status_counts": {
+          "200": 50
+        }
+      },
+      "saturated_trials": [
+        {
+          "client_cpu_seconds": 1.218,
+          "latency_ms": {
+            "p50": 2.773,
+            "p95": 4.767,
+            "p99": 13.634
+          },
+          "requests": 50610,
+          "requests_per_second": 10118.3,
+          "seconds": 5.002,
+          "status_counts": {
+            "200": 50610
+          }
+        },
+        {
+          "client_cpu_seconds": 1.048,
+          "latency_ms": {
+            "p50": 2.757,
+            "p95": 4.5,
+            "p99": 8.497
+          },
+          "requests": 52177,
+          "requests_per_second": 10430.5,
+          "seconds": 5.002,
+          "status_counts": {
+            "200": 52177
+          }
+        },
+        {
+          "client_cpu_seconds": 1.034,
+          "latency_ms": {
+            "p50": 2.725,
+            "p95": 4.348,
+            "p99": 8.292
+          },
+          "requests": 53422,
+          "requests_per_second": 10680.3,
+          "seconds": 5.002,
+          "status_counts": {
+            "200": 53422
+          }
+        }
+      ]
+    }
+  },
+  "micro": [
+    {
+      "architecture": "aarch64",
+      "check_rate_us": {
+        "p50": 0.583,
+        "p95": 0.625,
+        "p99": 0.667
+      },
+      "mode": "memory",
+      "operations": 10000,
+      "peak_rss_kib": 24664,
+      "python": "3.13.16",
+      "starting_peak_rss_kib": 24024,
+      "state_put_and_pop_us": {
+        "p50": 0.834,
+        "p95": 0.917
+      },
+      "synthetic_active_keys": 0
+    },
+    {
+      "architecture": "aarch64",
+      "check_rate_us": {
+        "p50": 0.584,
+        "p95": 0.708,
+        "p99": 0.959
+      },
+      "mode": "memory",
+      "operations": 10000,
+      "peak_rss_kib": 32928,
+      "python": "3.13.16",
+      "starting_peak_rss_kib": 24048,
+      "state_put_and_pop_us": {
+        "p50": 0.833,
+        "p95": 0.917
+      },
+      "synthetic_active_keys": 9000
+    },
+    {
+      "architecture": "aarch64",
+      "check_rate_us": {
+        "p50": 34.665,
+        "p95": 107.29,
+        "p99": 151.08
+      },
+      "mode": "redis",
+      "operations": 10000,
+      "peak_rss_kib": 40088,
+      "python": "3.13.16",
+      "starting_peak_rss_kib": 24036,
+      "state_put_and_pop_us": {
+        "p50": 45.332,
+        "p95": 59.041
+      },
+      "synthetic_active_keys": 0
+    },
+    {
+      "architecture": "aarch64",
+      "check_rate_us": {
+        "p50": 35.0,
+        "p95": 102.456,
+        "p99": 125.622
+      },
+      "mode": "redis",
+      "operations": 10000,
+      "peak_rss_kib": 39992,
+      "python": "3.13.16",
+      "starting_peak_rss_kib": 24028,
+      "state_put_and_pop_us": {
+        "p50": 46.083,
+        "p95": 66.206
+      },
+      "synthetic_active_keys": 9000
+    }
+  ],
+  "limitations": [
+    "Local ARM64 Docker measurements; production Mac mini was not accessed.",
+    "Synthetic health endpoint with no database, JWT verification, password hashing, TLS, Cloudflare, Traefik, or Kubernetes hop.",
+    "High throughput trials raise the per-IP ceiling solely to compare allowed-request capacity; defaults remain 30 requests per second.",
+    "Redis uses the previous synchronous-client/threadpool middleware; this is not a benchmark of every possible Redis implementation.",
+    "No-limiter case omits security middleware; its difference includes headers/body checks as well as limiting."
+  ],
+  "verification": {
+    "security_tests_passed": 68,
+    "existing_e2e_tests_passed": 52,
+    "redis_package_absent_in_fresh_image": true,
+    "default_http_limit": {
+      "burst": {
+        "requests": 100,
+        "seconds": 0.045,
+        "status_counts": {
+          "200": 30,
+          "429": 70
+        }
+      },
+      "paced_10_rps": {
+        "client_cpu_seconds": 0.077,
+        "latency_ms": {
+          "p50": 0.462,
+          "p95": 2.888,
+          "p99": 71.848
+        },
+        "requests": 50,
+        "requests_per_second": 10.0,
+        "seconds": 5.002,
+        "status_counts": {
+          "200": 50
+        }
+      }
+    }
+  }
+}

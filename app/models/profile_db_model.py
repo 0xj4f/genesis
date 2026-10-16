@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Date, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Date, Boolean, UniqueConstraint
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -10,6 +10,7 @@ class Profile(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(CHAR(36), ForeignKey("users.id"), nullable=False)
+    __table_args__ = (UniqueConstraint("user_id", name="uq_profiles_user_id"),)
 
     # Identity
     given_name = Column(String(100), nullable=False)

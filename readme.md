@@ -6,6 +6,12 @@ Genesis is an open-source Identity & Access Management microservice built for de
 
 Built by [0xj4f](https://github.com/0xj4f).
 
+Before deploying, follow the [production security configuration](docs/security-hardening.md).
+Production uses the existing single API worker; no new service is required.
+See the guide for secrets, HTTPS origins, trusted proxies, persistent signing
+keys, and schema migration 004. The standalone frontend
+image must be built with your HTTPS API URL.
+
 ---
 
 ## The Problem

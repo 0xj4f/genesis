@@ -74,7 +74,7 @@ def refresh_access_token_service(refresh_token: str, db: Session, request: Reque
     jti = payload.get("jti")
     sid = payload.get("sid")
 
-    if not user_id or not jti:
+    if not user_id or not jti or not sid:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     user = get_user_by_id_db(db, user_id)
@@ -84,15 +84,13 @@ def refresh_access_token_service(refresh_token: str, db: Session, request: Reque
         raise HTTPException(status_code=403, detail="User account is deactivated")
 
     # Validate refresh token against session (replay detection)
-    if sid:
-        validate_refresh_against_session(db, jti, sid)
+    validate_refresh_against_session(db, jti, sid, user_id)
 
     # Pre-generate new refresh JTI
     new_refresh_jti = str(uuid4())
 
     # Rotate session's refresh token jti
-    if sid:
-        rotate_session_token(db, sid, new_refresh_jti)
+    rotate_session_token(db, sid, new_refresh_jti, jti, user_id)
 
     # Build new payload
     new_payload = {
