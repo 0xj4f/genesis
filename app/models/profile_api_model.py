@@ -51,6 +51,7 @@ class ProfileCreate(ProfileBase):
 
 
 class Profile(ProfileBase):
+    email: Optional[str] = None  # Serialize stored/internal addresses in responses.
     id: int
     phone_verified: Optional[bool] = False
     picture_key: Optional[str] = None

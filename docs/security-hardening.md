@@ -5,8 +5,10 @@ at `public/iam/templates/api.yaml`: one Genesis replica, `Recreate` updates, one
 API worker, existing MySQL, and keys mounted from a Kubernetes Secret. Public
 traffic already passes through Cloudflare and Traefik. **No Redis or other new
 service is needed.** The limiter uses the same implementation in development and
-production, and requires no infrastructure-chart changes. The standalone
-Compose configuration below is a separate deployment option.
+production. The Helm chart supplies production mode, allowed public/internal
+hosts, probe Host headers, and the bootstrap password through the existing
+Secret workflow. The standalone Compose configuration below is a separate
+deployment option.
 
 ## Rate limits
 
@@ -73,11 +75,13 @@ these explicitly along with
 `CORS_ALLOW_ORIGINS`, the database settings, and the RSA key paths. Production
 rejects wildcard hosts/origins, non-HTTPS origins, or missing RSA key paths.
 Startup verifies that a matching RSA key pair (at least 2048 bits) is available.
-Production mode cannot fall back to the development HMAC secret. The existing
-Helm chart does not currently set `ENVIRONMENT=production`; its mounted keys and
-issuer continue to work without adding an environment variable or a service.
-Enabling the stricter startup mode would require supplying its host/bootstrap
-settings through the existing infrastructure process.
+Production mode cannot fall back to the development HMAC secret. The Mac mini
+Helm chart now enables these checks for both public dev and prod environments.
+Run `make secrets` in the infrastructure repository before upgrading Genesis:
+it adds `GENESIS_BOOTSTRAP_ROOT_PASSWORD` to old secret files and the existing
+`genesis-db` Secret without changing database or existing ROOT passwords. New
+databases use that bootstrap value. `make genesis-root-password` saves the
+initial ROOT credential privately; production no longer prints it.
 
 The `signing_keys` volume preserves signing keys across container recreation.
 For multiple replicas, provision the same pair before starting them; keep
@@ -164,7 +168,7 @@ python -m pytest tests/security -q
 ```
 
 To include the MySQL integration cases, point this variable at a disposable
-test services. The database name must end in `_security`; **these integration
+test database. Its name must end in `_security`; **these integration
 tests drop and recreate that database's application tables**:
 
 ```sh
@@ -173,6 +177,10 @@ python -m pytest tests/security -q
 ```
 
 The PR workflow runs these integration tests using disposable service containers.
+When Helm and the adjacent infrastructure checkout are available, deployment
+contract tests also render both environment configurations and check production
+startup, host restrictions, health probes, JWKS, and CORS. Set
+`GENESIS_INFRA_ROOT` to select a different checkout.
 The security tests include atomic in-process limits and SSO state, real MySQL 8
 races, and the existing end-to-end suite. The Redis removal and performance
 verification are recorded in [the measured decision](redis-decision.md).

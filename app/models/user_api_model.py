@@ -69,7 +69,9 @@ class UserCreate(BaseModel):
 class User(BaseModel):
     id: UUID
     username: str
-    email: EmailStr
+    # Responses must serialize legacy/internal addresses (e.g. the seeded
+    # adam@genesis.local). Create/update requests still validate EmailStr.
+    email: str
     disabled: Optional[bool] = False
     is_active: Optional[bool] = True
     email_verified: Optional[bool] = False

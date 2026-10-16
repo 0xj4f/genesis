@@ -92,8 +92,10 @@ latency distributions, status counts, and direct operation measurements.
 **Keep the existing deployment design and use the in-process limiter.** Redis
 provided no required correctness benefit for one worker and added latency,
 an availability dependency, and deployment work. It has been removed rather
-than retained as an optional production prerequisite. No infrastructure chart
-or network policy was changed, and no deployment was performed.
+than retained as an optional production prerequisite. During Redis removal, no
+infrastructure chart or network policy was changed, and no deployment was performed.
+The subsequent deployment compatibility review updated the existing Helm chart;
+see [deployment settings](security-hardening.md).
 
 The fresh application image was checked to contain no Redis package. **All 68
 security/MySQL concurrency tests and all 52 existing end-to-end tests passed**
