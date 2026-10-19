@@ -40,8 +40,8 @@ The provider account is already linked in `oauth_accounts`. Genesis loads the li
 
 ### 2. New SSO User, Email Matches Existing Account
 No `oauth_accounts` row exists, but a user with the same email is found:
-- If the existing account has **verified email**: auto-link the SSO provider and issue tokens
-- If **not verified**: return an error asking the user to log in with their password and verify email first
+- Auto-link only when **both** the existing account's email is verified in Genesis **and** the provider reports it as verified. Otherwise return 409: the user signs in with their password and links the provider from their profile.
+- This blocks "pre-account takeover": someone registering the victim's email with their own password before the victim's first SSO sign-in.
 
 ### 3. Entirely New User
 No matching account at all. Genesis:
@@ -57,8 +57,9 @@ No matching account at all. Genesis:
 An authenticated user can link additional SSO providers to their account:
 
 ```bash
-# Link Google (opens browser redirect)
-GET /auth/sso/google/link
+# Start linking Google: returns {"authorization_url": ...} and sets the state cookie
+# (call with credentials so the cookie is stored), then send the browser there.
+POST /auth/sso/google/link
 Authorization: Bearer <token>
 
 # List linked providers
@@ -108,3 +109,22 @@ Returns only providers that have both `CLIENT_ID` and `CLIENT_SECRET` set:
 - [Google SSO Setup](google.md) - Google Cloud Console credentials
 - [GitHub SSO Setup](github.md) - GitHub OAuth App registration
 - [Facebook SSO Setup](facebook.md) - Meta Developer App configuration
+
+---
+
+## Hand-off to the web app (FRONTEND_URL)
+
+When `FRONTEND_URL` is set, the provider callback does not return tokens on the API origin. It redirects to
+`{FRONTEND_URL}/sso/callback#code=<one-time code>` (or `#error=<code>`), and sets an HttpOnly
+`genesis_sso_handoff` cookie. The web app calls `POST /auth/sso/exchange {"code": ...}` with credentials
+to receive tokens. The code works once, for two minutes, and only in the browser that completed the
+provider sign-in. A completed link also hands back a fresh session (`#code=...&linked=<provider>`).
+Without `FRONTEND_URL`, the callback returns JSON as before.
+
+## Protocol details (Authlib)
+
+- The OAuth client is Authlib's `AsyncOAuth2Client`; PKCE (S256) is used for Google and GitHub.
+  Facebook documents PKCE for its login dialog as still in testing, so it is not enabled there yet.
+- Google is verified as OpenID Connect: the ID token's signature (Google JWKS), issuer, audience,
+  expiry and nonce are checked. GitHub/Facebook profiles come from their user APIs.
+- Provider access/refresh tokens are used during the callback only and never stored.

@@ -63,8 +63,8 @@ AUTH_RATE_LIMIT_PER_MINUTE=10
 REFRESH_RATE_LIMIT_PER_MINUTE=60
 ```
 
-The bootstrap password must meet the existing 12-character password policy and
-fit within bcrypt's 72-byte UTF-8 limit. It is used only when creating the first
+The bootstrap password must meet the password policy (12-128 characters, upper
+and lower case, a number and one of `@#$%^&+=!`). It is used only when creating the first
 ROOT user, and production never prints it. Supplying a different value later
 does not reset an existing ROOT password. Protect the environment file and use
 your deployment secret manager where available.
@@ -144,8 +144,8 @@ forwarded scheme is trusted.
   Stop application writes while applying this MySQL DDL migration.
 - Duplicate registration/update/link writes return a client error after rollback.
   Provider unlinking serializes checks to preserve the last authentication method.
-- SSO auto-linking requires the provider to verify the incoming email, even when
-  the local account is verified. GitHub verification comes from its email API.
+- SSO auto-linking requires the provider to verify the incoming email **and** the
+  local account's email to be verified in Genesis (2026-10 change; see below). GitHub verification comes from its email API.
   Callback state is browser-bound with an HttpOnly, SameSite=Lax cookie, expires
   after ten minutes, and can be consumed once. A cross-browser or cookie-less
   callback must restart authorization.
@@ -204,3 +204,27 @@ References: [OWASP authentication guidance](https://cheatsheetseries.owasp.org/c
 [nginx request limiting](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html),
 [GitHub email verification](https://docs.github.com/en/rest/users/emails),
 [PyJWT validation](https://pyjwt.readthedocs.io/en/latest/usage.html).
+
+## 2026-10 auth hardening
+
+Summary of the changes from the authentication audit (full report:
+[`docs/audits/auth-audit-2026-10-19.md`](audits/auth-audit-2026-10-19.md); libraries: [`backend.md`](../backend.md),
+[`frontend.md`](../frontend.md)).
+
+- Passwords: Argon2id via pwdlib (m=19 MiB, t=2, p=1, at most 4 hashes at once); bcrypt hashes upgrade on login.
+  Passwords may be 12-128 characters (the 72-byte bcrypt limit is gone).
+- Per-account lockout after 5 failures in 15 minutes (429, doubling up to 15 minutes), including unknown usernames.
+- `PUT /users/{id}` no longer changes passwords. Use `POST /users/me/password` (current password required; SSO-only
+  accounts need a sign-in from the last 10 minutes) or `POST /admin/users/{id}/password`. Changing your own email
+  needs `current_password`.
+- Only ROOT manages admin accounts (role changes, disable, delete, password reset). Role changes and disabling
+  revoke the target's sessions; the `role` claim is in every user token and can be stale for up to the access-token
+  lifetime in relying parties that validate offline.
+- OIDC: refresh tokens are bound to their client; non-first-party clients need consent; `/oauth/token` client
+  secrets are SHA-256 (legacy bcrypt upgraded on use) and checked off the event loop.
+- SSO: Authlib client with PKCE and nonce, Google ID-token verification, no stored provider tokens, browser-bound
+  hand-off to the web app.
+- No committed HS256 secret; missing key files stop startup in every environment.
+- Optional email verification (`EMAIL_VERIFY`, default false). Enabling it on an existing database requires existing
+  unverified users to verify (via `POST /auth/email/resend`) before password sign-in.
+- Emergency password reset: `python -m app.cli reset-password USERNAME` (password from stdin, never printed).
