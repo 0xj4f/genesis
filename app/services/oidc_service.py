@@ -5,20 +5,23 @@ import hashlib
 import base64
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth.auth import create_access_token, create_refresh_token
+from app.auth.auth import build_user_claims, create_access_token, create_refresh_token
 from app.auth.keys import get_signing_key
+from app.auth.throttle import client_key, ensure_attempt_allowed, record_failure, record_success
 from app.config import get_settings
 from app.database.oauth_client_db_interface import get_oauth_client_by_id_db
 from app.database.authz_code_db_interface import create_authz_code_db, get_authz_code_db, mark_authz_code_used_db
 from app.database.user_db_interface import get_user_by_id_db
 from app.database.profile_db_interface import get_profile_by_user_db
 from app.services.session_service import create_session
-from app.utils.security import verify_password
+from app.utils.audit import security_event
+from app.utils.security import verify_client_secret
 
 settings = get_settings()
 
@@ -26,9 +29,14 @@ settings = get_settings()
 def get_openid_configuration() -> dict:
     """Return the OpenID Connect discovery document."""
     issuer = settings.OAUTH_ISSUER
+    # The browser-facing authorize step (sign-in + consent) lives in the web app
+    # when it is configured; the API endpoint itself requires a bearer token.
+    authorization_endpoint = (
+        f"{settings.frontend_url}/oauth/authorize" if settings.frontend_url else f"{issuer}/oauth/authorize"
+    )
     return {
         "issuer": issuer,
-        "authorization_endpoint": f"{issuer}/oauth/authorize",
+        "authorization_endpoint": authorization_endpoint,
         "token_endpoint": f"{issuer}/oauth/token",
         "userinfo_endpoint": f"{issuer}/oauth/userinfo",
         "jwks_uri": f"{issuer}/.well-known/jwks.json",
@@ -46,6 +54,54 @@ def get_openid_configuration() -> dict:
         ],
         "code_challenge_methods_supported": ["S256"],
     }
+
+
+def authenticate_client(db: Session, client, client_secret: str | None) -> None:
+    """Verify a confidential client's secret (throttled per client).
+    Legacy bcrypt secret hashes are upgraded to SHA-256 on first success."""
+    key = client_key(str(client.id))
+    ensure_attempt_allowed(key)
+    if not client_secret:
+        raise HTTPException(status_code=401, detail="Client authentication required")
+    valid, upgraded_hash = verify_client_secret(client_secret, client.client_secret_hash)
+    if not valid:
+        record_failure(key)
+        security_event("client_auth_failed", client_id=str(client.id))
+        raise HTTPException(status_code=401, detail="Invalid client credentials")
+    record_success(key)
+    if upgraded_hash:
+        client.client_secret_hash = upgraded_hash
+        db.commit()
+
+
+def load_client_for_grant(db: Session, client_id: str, client_secret: str | None, grant_type: str):
+    """Load an active client allowed to use grant_type, authenticating it when confidential."""
+    client = get_oauth_client_by_id_db(db, client_id) if client_id else None
+    if not client:
+        raise HTTPException(status_code=401, detail="Unknown client")
+    if grant_type not in (client.grant_types or []):
+        raise HTTPException(status_code=400, detail=f"{grant_type} grant not allowed for this client")
+    if client.is_confidential:
+        authenticate_client(db, client, client_secret)
+    return client
+
+
+def get_public_client_info(db: Session, client_id: str) -> dict:
+    """What the consent screen shows about a client. No secrets."""
+    client = get_oauth_client_by_id_db(db, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Unknown client_id")
+    return {
+        "client_id": str(client.id),
+        "client_name": client.client_name,
+        "is_first_party": bool(client.is_first_party),
+        "allowed_scopes": client.allowed_scopes or [],
+    }
+
+
+def authorization_redirect(redirect_uri: str, params: dict) -> str:
+    separator = "&" if "?" in redirect_uri else "?"
+    return f"{redirect_uri}{separator}{urlencode(params)}"
 
 
 def validate_authorize_request(
@@ -150,10 +206,7 @@ def exchange_authorization_code(
 
     # Authenticate confidential clients
     if client.is_confidential:
-        if not client_secret:
-            raise HTTPException(status_code=401, detail="Client authentication required")
-        if not verify_password(client_secret, client.client_secret_hash):
-            raise HTTPException(status_code=401, detail="Invalid client credentials")
+        authenticate_client(db, client, client_secret)
 
     # Validate redirect_uri
     if authz_code.redirect_uri != redirect_uri:
@@ -193,17 +246,10 @@ def exchange_authorization_code(
     )
 
     # Include both the client_id and default audience so genesis can validate its own tokens
-    audiences = list({client_id, settings.OAUTH_DEFAULT_AUDIENCE})
-    payload = {
-        "sub": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "email_verified": user.email_verified,
-        "auth_method": "oidc",
-        "scope": authz_code.scope,
-        "sid": session_id,
-        "aud": audiences,
-    }
+    audiences = sorted({client_id, settings.OAUTH_DEFAULT_AUDIENCE})
+    payload = build_user_claims(user, sid=session_id, auth_method="oidc", scope=authz_code.scope)
+    # client_id binds the refresh token to this client (checked at refresh time).
+    payload.update({"aud": audiences, "client_id": client_id})
 
     access_token, _ = create_access_token(data=payload)
 
@@ -214,8 +260,8 @@ def exchange_authorization_code(
         "scope": authz_code.scope,
     }
 
-    # Issue refresh token if offline_access scope
-    if "offline_access" in scopes:
+    # Issue a refresh token only when requested and allowed for this client
+    if "offline_access" in scopes and "refresh_token" in (client.grant_types or []):
         refresh_token, _ = create_refresh_token(data={**payload, "jti_override": refresh_jti})
         result["refresh_token"] = refresh_token
 
@@ -246,8 +292,7 @@ def handle_client_credentials(db: Session, client_id: str, client_secret: str, s
     if not client.is_confidential:
         raise HTTPException(status_code=400, detail="client_credentials requires a confidential client")
 
-    if not verify_password(client_secret, client.client_secret_hash):
-        raise HTTPException(status_code=401, detail="Invalid client credentials")
+    authenticate_client(db, client, client_secret)
 
     # Validate requested scopes
     requested_scopes = (scope or "").split()
@@ -261,6 +306,7 @@ def handle_client_credentials(db: Session, client_id: str, client_secret: str, s
         "scope": scope or "",
         "aud": audiences,
         "auth_method": "client_credentials",
+        "client_id": client_id,
     }
 
     access_token, _ = create_access_token(data=payload)

@@ -21,6 +21,13 @@ class OAuthProviderConfig:
 
     # Mapping from provider userinfo fields to our internal fields
     field_map: dict[str, str] = None
+    # PKCE (S256) binds the authorization code to this sign-in attempt.
+    pkce: bool = True
+    # OpenID Connect providers return a signed ID token that is verified
+    # (issuer, audience, expiry, nonce) instead of calling a userinfo API.
+    oidc: bool = False
+    jwks_uri: str | None = None
+    issuers: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.field_map is None:
@@ -40,6 +47,9 @@ def _register_providers():
             userinfo_url="https://openidconnect.googleapis.com/v1/userinfo",
             scopes=["openid", "email", "profile"],
             redirect_uri=settings.GOOGLE_REDIRECT_URI or f"{settings.OAUTH_ISSUER}/auth/sso/google/callback",
+            oidc=True,
+            jwks_uri="https://www.googleapis.com/oauth2/v3/certs",
+            issuers=("https://accounts.google.com", "accounts.google.com"),
             field_map={
                 "sub": "sub",
                 "email": "email",
@@ -80,6 +90,9 @@ def _register_providers():
             userinfo_url="https://graph.facebook.com/me?fields=id,name,email,picture.type(large)",
             scopes=["email", "public_profile"],
             redirect_uri=settings.FACEBOOK_REDIRECT_URI or f"{settings.OAUTH_ISSUER}/auth/sso/facebook/callback",
+            # Facebook documents PKCE for its login dialog as still "in testing";
+            # enable once it is generally available.
+            pkce=False,
             field_map={
                 "sub": "id",
                 "email": "email",

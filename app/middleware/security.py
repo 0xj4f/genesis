@@ -33,11 +33,16 @@ class SecurityMiddleware:
         ip = scope["client"][0] if scope.get("client") else "unknown"
         path = scope["path"].rstrip("/")
         limits = [(f"ip:{ip}", self.settings.RATE_LIMIT_PER_SECOND, 1)]
-        if scope["method"] == "POST" and path in {"/token", "/admin/login", "/users", "/oauth/token"}:
+        if scope["method"] == "POST" and path in {
+            "/token", "/admin/login", "/users", "/oauth/token", "/users/me/password",
+            "/auth/email/verify", "/auth/email/resend", "/auth/sso/exchange",
+        }:
             limits.append((f"auth:{ip}", self.settings.AUTH_RATE_LIMIT_PER_MINUTE, 60))
         elif scope["method"] == "POST" and path == "/refresh_token":
             limits.append((f"refresh:{ip}", self.settings.REFRESH_RATE_LIMIT_PER_MINUTE, 60))
-        elif scope["method"] == "GET" and path.startswith("/auth/sso/") and path.endswith(("/authorize", "/link", "/callback")):
+        elif scope["method"] == "POST" and path.startswith("/auth/sso/") and path.endswith("/link"):
+            limits.append((f"auth:{ip}", self.settings.AUTH_RATE_LIMIT_PER_MINUTE, 60))
+        elif scope["method"] == "GET" and path.startswith("/auth/sso/") and path.endswith(("/authorize", "/callback")):
             limits.append((f"auth:{ip}", self.settings.AUTH_RATE_LIMIT_PER_MINUTE, 60))
 
         try:

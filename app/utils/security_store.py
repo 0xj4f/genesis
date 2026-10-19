@@ -18,6 +18,10 @@ class MemorySecurityStore:
         # lazily, avoiding both a full scan and a new heap entry on every hit.
         self._rate_expiries = []
         self.states = OrderedDict()
+        # Per-account login failures: key -> [recent failure times, locked_until, lockouts].
+        # Least-recently-used entries are evicted instead of failing closed, so a
+        # flood of unknown usernames cannot block every login.
+        self.failures = OrderedDict()
         self.max_keys = max_keys
         self.clock = clock
         self.lock = threading.Lock()
@@ -64,6 +68,43 @@ class MemorySecurityStore:
         with self.lock:
             item = self.states.pop(key, None)
             return item[1] if item and item[0] > self.clock() else None
+
+
+    def login_retry_after(self, key: str) -> int:
+        """Seconds until this account may try again (0 when not locked)."""
+        with self.lock:
+            entry = self.failures.get(key)
+            if not entry:
+                return 0
+            remaining = entry[1] - self.clock()
+            return max(1, math.ceil(remaining)) if remaining > 0 else 0
+
+    def record_login_failure(self, key: str, max_failures: int, window: int, max_lockout: int) -> int:
+        """Record a failed attempt. Returns the lockout length when this failure
+        locks the account; each further lockout doubles, up to max_lockout."""
+        with self.lock:
+            now = self.clock()
+            entry = self.failures.pop(key, None)
+            if entry is None or (not entry[0] and entry[1] <= now - window):
+                entry = [deque(), 0.0, 0]
+            hits = entry[0]
+            while hits and hits[0] <= now - window:
+                hits.popleft()
+            hits.append(now)
+            locked_for = 0
+            if len(hits) >= max_failures:
+                entry[2] += 1
+                locked_for = min(60 * 2 ** (entry[2] - 1), max_lockout)
+                entry[1] = now + locked_for
+                hits.clear()
+            self.failures[key] = entry
+            while len(self.failures) > self.max_keys:
+                self.failures.popitem(last=False)
+            return locked_for
+
+    def clear_login_failures(self, key: str) -> None:
+        with self.lock:
+            self.failures.pop(key, None)
 
 
 @lru_cache()

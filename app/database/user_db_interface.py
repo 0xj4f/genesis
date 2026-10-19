@@ -32,10 +32,11 @@ def get_user_by_id_db(db: Session, user_id: str, for_update: bool = False):
 
 
 def update_user_by_id_db(db: Session, user_id: str, user_update: UserUpdate):
+    """Apply username/email changes. Passwords are changed with set_user_password_db."""
     user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         return None
-    update_data = user_update.model_dump(exclude_unset=True)
+    update_data = user_update.model_dump(exclude_unset=True, include={"username", "email"})
     if update_data.get("email") and update_data["email"] != user.email:
         # Verification belongs to the verified address, not arbitrary replacements.
         user.email_verified = False
@@ -43,16 +44,26 @@ def update_user_by_id_db(db: Session, user_id: str, user_update: UserUpdate):
     for key, value in update_data.items():
         if value is not None:
             setattr(user, key, value)
-    if update_data.get("password"):
-        from app.models.session_db_model import Session as LoginSession
-        db.query(LoginSession).filter(
-            LoginSession.user_id == user_id, LoginSession.is_active == True,  # noqa: E712
-        ).update({"is_active": False, "revoked_at": datetime.utcnow(), "revoked_reason": "password_changed"}, synchronize_session=False)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered or username already taken")
+    db.refresh(user)
+    return user
+
+
+def set_user_password_db(db: Session, user: User, password_hash: str, reason: str, keep_session_id: str = None) -> User:
+    """Store a new password hash and revoke the user's other sessions."""
+    from app.models.session_db_model import Session as LoginSession
+    user.password = password_hash
+    sessions = db.query(LoginSession).filter(
+        LoginSession.user_id == str(user.id), LoginSession.is_active == True,  # noqa: E712
+    )
+    if keep_session_id:
+        sessions = sessions.filter(LoginSession.id != keep_session_id)
+    sessions.update({"is_active": False, "revoked_at": datetime.utcnow(), "revoked_reason": reason}, synchronize_session=False)
+    db.commit()
     db.refresh(user)
     return user
 
@@ -63,7 +74,9 @@ def delete_user_by_id_db(db: Session, user_id: str):
         return None
     # Clean up non-cascaded FKs
     from app.models.authz_code_db_model import AuthorizationCode
+    from app.models.email_verification_db_model import EmailVerificationToken
     from app.models.profile_db_model import Profile
+    db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user_id).delete()
     db.query(AuthorizationCode).filter(AuthorizationCode.user_id == user_id).delete()
     db.query(Profile).filter(Profile.user_id == user_id).delete()
     db.delete(user)

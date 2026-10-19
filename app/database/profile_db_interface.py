@@ -38,8 +38,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 
-def create_profile_db(db: Session, profile_create: ProfileCreate) -> Profile:
-    db_profile = Profile(**profile_create.dict())
+def create_profile_db(db: Session, profile_data: dict) -> Profile:
+    db_profile = Profile(**profile_data)
     db.add(db_profile)
     try:
         db.commit()
@@ -56,7 +56,7 @@ def update_profile_by_id_db(db: Session, user_id: str, profile_update: ProfileUp
     profile = db.query(Profile).filter(Profile.user_id == user_id).first()
     if not profile:
         return None
-    for var, value in vars(profile_update).items():
+    for var, value in profile_update.model_dump(exclude_unset=True).items():
         setattr(profile, var, value) if value else None
     db.commit()
     db.refresh(profile)

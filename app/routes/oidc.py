@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Form
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from typing import Optional
-from urllib.parse import urlencode
+from typing import Literal, Optional
 
 from app.database.session import get_db
 from app.auth.auth import oauth_authenticate_current_user, decode_token
@@ -16,7 +16,10 @@ from app.services.oidc_service import (
     exchange_authorization_code,
     handle_client_credentials,
     get_userinfo,
+    get_public_client_info,
+    authorization_redirect,
 )
+from app.utils.audit import security_event
 from app.services.auth_service import refresh_access_token_service
 from fastapi.security import OAuth2PasswordBearer
 
@@ -49,14 +52,17 @@ def authorize(
 ):
     """OIDC Authorization endpoint. Requires authenticated user.
 
-    For first-party apps, consent is auto-approved.
+    Only first-party clients are approved without asking. Other clients must go
+    through the web app's consent screen (POST /oauth/authorize).
     Returns redirect with authorization code.
     """
     # Validate the request
-    validate_authorize_request(
+    validated = validate_authorize_request(
         db, client_id, redirect_uri, response_type, scope,
         code_challenge, code_challenge_method,
     )
+    if not validated["client"].is_first_party:
+        raise HTTPException(status_code=403, detail="consent_required")
 
     # Generate authorization code
     code = create_authorization_code(
@@ -71,18 +77,68 @@ def authorize(
     )
 
     # Redirect back to client with code
-    params = {"code": code, "state": state}
-    separator = "&" if "?" in redirect_uri else "?"
     return RedirectResponse(
-        url=f"{redirect_uri}{separator}{urlencode(params)}",
+        url=authorization_redirect(redirect_uri, {"code": code, "state": state}),
         status_code=302,
     )
 
 
+class AuthorizeDecision(BaseModel):
+    response_type: str = Field(max_length=20)
+    client_id: str = Field(max_length=64)
+    redirect_uri: str = Field(max_length=2048)
+    scope: str = Field("openid", max_length=500)
+    state: str = Field(min_length=1, max_length=500)
+    nonce: Optional[str] = Field(None, max_length=255)
+    code_challenge: Optional[str] = Field(None, max_length=128)
+    code_challenge_method: Optional[str] = Field(None, max_length=10)
+    consent: Literal["approve", "deny"]
+
+
+@router.post("/oauth/authorize", tags=["oidc"])
+def authorize_with_consent(
+    decision: AuthorizeDecision,
+    db: Session = Depends(get_db),
+    current_user=Depends(oauth_authenticate_current_user),
+):
+    """Called by the web app's consent screen after the user signs in.
+
+    Returns {"redirect_to": ...} for the browser to follow: either the code or
+    error=access_denied, both sent only to the client's registered redirect_uri.
+    """
+    validate_authorize_request(
+        db, decision.client_id, decision.redirect_uri, decision.response_type, decision.scope,
+        decision.code_challenge, decision.code_challenge_method,
+    )
+    if decision.consent == "deny":
+        security_event("oauth_consent_denied", user_id=str(current_user.id), client_id=decision.client_id)
+        return {"redirect_to": authorization_redirect(decision.redirect_uri, {"error": "access_denied", "state": decision.state})}
+    code = create_authorization_code(
+        db,
+        client_id=decision.client_id,
+        user_id=str(current_user.id),
+        redirect_uri=decision.redirect_uri,
+        scope=decision.scope,
+        nonce=decision.nonce,
+        code_challenge=decision.code_challenge,
+        code_challenge_method=decision.code_challenge_method,
+    )
+    security_event("oauth_consent_granted", user_id=str(current_user.id), client_id=decision.client_id)
+    return {"redirect_to": authorization_redirect(decision.redirect_uri, {"code": code, "state": decision.state})}
+
+
+@router.get("/oauth/clients/{client_id}/public", tags=["oidc"])
+def public_client_info(client_id: str, db: Session = Depends(get_db)):
+    """Client name and scopes for the consent screen."""
+    return get_public_client_info(db, client_id)
+
+
 # ---- Token Endpoint ----
 
+# A plain def: client authentication and database work run in the threadpool
+# instead of blocking the event loop.
 @router.post("/oauth/token", tags=["oidc"])
-async def token_endpoint(
+def token_endpoint(
     request: Request,
     grant_type: str = Form(...),
     code: Optional[str] = Form(None),
@@ -123,7 +179,10 @@ async def token_endpoint(
     elif grant_type == "refresh_token":
         if not refresh_token:
             raise HTTPException(status_code=400, detail="refresh_token is required")
-        return refresh_access_token_service(refresh_token, db, request)
+        return refresh_access_token_service(
+            refresh_token, db, request,
+            client_id=client_id, client_secret=client_secret, via_oauth_client=True,
+        )
 
     elif grant_type == "client_credentials":
         if not client_id or not client_secret:

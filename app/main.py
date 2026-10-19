@@ -13,6 +13,7 @@ from app.routes.auth import router as auth_router
 from app.routes.sso import router as sso_router
 from app.routes.oidc import router as oidc_router
 from app.routes.admin import router as admin_router
+from app.routes.email import router as email_router
 import logging
 
 settings = get_settings()
@@ -22,9 +23,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
-    if settings.ENVIRONMENT == "production":
-        # Fail startup if signing keys are unavailable; never weaken auth.
-        get_signing_key()
+    # Fail startup if no usable signing key exists; never weaken auth.
+    get_signing_key()
     yield
 
 
@@ -47,6 +47,7 @@ app.include_router(profile_router, prefix="/profile", tags=["profile"])
 app.include_router(sso_router, prefix="", tags=["sso"])
 app.include_router(oidc_router, prefix="", tags=["oidc"])
 app.include_router(admin_router, prefix="", tags=["admin"])
+app.include_router(email_router, prefix="", tags=["auth"])
 
 
 @app.get("/health", tags=["system"])

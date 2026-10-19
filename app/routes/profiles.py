@@ -21,9 +21,7 @@ def create_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(oauth_authenticate_current_user),
 ):
-    profile_create.user_id = current_user.id
-    profile_create.email = current_user.email
-    return create_profile_service(db, profile_create)
+    return create_profile_service(db, current_user, profile_create)
 
 
 @router.get("/me/", response_model=Profile)
