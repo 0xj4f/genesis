@@ -14,8 +14,7 @@
         <div v-else-if="user" class="pane-body">
           <!-- Avatar + Name -->
           <div class="pane-profile">
-            <div v-if="user.profile && user.profile.picture" class="avatar avatar-lg"
-                 :style="{ backgroundImage: `url(${fixUrl(user.profile.picture)})`, backgroundSize: 'cover' }"></div>
+            <img v-if="avatar" :src="avatar" class="avatar avatar-lg" alt="Avatar" referrerpolicy="no-referrer" />
             <div v-else class="avatar avatar-lg avatar-placeholder">
               {{ (user.username || '?')[0].toUpperCase() }}
             </div>
@@ -39,29 +38,37 @@
             </div>
           </div>
 
-          <!-- Actions -->
-          <div class="pane-actions">
-            <div class="form-group">
-              <label>Role</label>
-              <select v-model="selectedRole" class="form-input">
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-                <option value="root">root</option>
-              </select>
-            </div>
-            <button class="btn btn-primary btn-sm" @click="changeRole" :disabled="selectedRole === user.role">
-              Update Role
-            </button>
+          <!-- Actions (hidden when the API would refuse them; the API still decides) -->
+          <div v-if="canManage" class="pane-actions">
+            <template v-if="isRootAdmin && !isSelf">
+              <div class="form-group">
+                <label for="role">Role</label>
+                <select v-model="selectedRole" id="role" class="form-input">
+                  <option v-for="role in roles" :key="role" :value="role">{{ role }}</option>
+                </select>
+              </div>
+              <button class="btn btn-primary btn-sm" @click="changeRole" :disabled="selectedRole === user.role">
+                Update Role
+              </button>
+            </template>
 
-            <div class="action-row mt-md">
+            <form v-if="!isSelf" @submit.prevent="resetPassword" class="stack mt-md">
+              <label for="reset-password">Set a new password (signs the user out everywhere)</label>
+              <input v-model="newPassword" id="reset-password" type="password" class="form-input"
+                     autocomplete="new-password" minlength="12" maxlength="128" required />
+              <button type="submit" class="btn btn-outline btn-sm">Reset Password</button>
+            </form>
+
+            <div class="action-row mt-md" v-if="user.role !== 'root'">
               <button class="btn btn-outline btn-sm" @click="toggleStatus">
                 {{ user.disabled ? 'Enable User' : 'Disable User' }}
               </button>
-              <button v-if="user.role !== 'root'" class="btn btn-danger btn-sm" @click="deleteUser">
+              <button class="btn btn-danger btn-sm" @click="deleteUser">
                 Delete
               </button>
             </div>
           </div>
+          <p v-else class="text-muted text-sm mt-md">Only ROOT can manage this account.</p>
 
           <div v-if="actionMsg" class="alert alert-success mt-md">{{ actionMsg }}</div>
           <div v-if="actionError" class="alert alert-error mt-md">{{ actionError }}</div>
@@ -72,7 +79,10 @@
 </template>
 
 <script>
+import { mapGetters, mapState } from 'vuex';
 import api from '@/api';
+import { assetUrl } from '@/utils/url';
+import { passwordError } from '@/utils/validation';
 
 export default {
   name: 'UserDetailPane',
@@ -86,12 +96,24 @@ export default {
       user: null,
       loading: false,
       selectedRole: 'user',
+      newPassword: '',
       actionMsg: '',
       actionError: '',
+      roles: ['user', 'admin', 'root'],
     };
   },
   computed: {
-    token() { return this.$store.state.adminToken; },
+    ...mapGetters(['isRootAdmin']),
+    ...mapState(['adminUser']),
+    avatar() { return assetUrl(this.user?.profile?.picture); },
+    isSelf() { return !!this.adminUser && this.adminUser.id === this.user?.id; },
+    // Mirrors the API policy: admins manage regular users; root manages everyone but other roots.
+    canManage() {
+      if (!this.user) return false;
+      if (this.isSelf) return true;
+      if (this.isRootAdmin) return this.user.role !== 'root';
+      return this.user.role === 'user';
+    },
     details() {
       if (!this.user) return [];
       const u = this.user;
@@ -128,15 +150,16 @@ export default {
       this.actionMsg = '';
       this.actionError = '';
       try {
-        this.user = await api.getAdminUserDetail(this.token, id);
+        this.user = await api.getAdminUserDetail(id);
         this.selectedRole = this.user.role;
       } catch (e) { this.actionError = e.message; }
       finally { this.loading = false; }
     },
     async changeRole() {
       this.actionError = '';
+      if (!confirm(`Change ${this.user.username}'s role to ${this.selectedRole}? They will be signed out.`)) return;
       try {
-        await api.updateUserRole(this.token, this.userId, this.selectedRole);
+        await api.updateUserRole(this.userId, this.selectedRole);
         this.actionMsg = `Role updated to ${this.selectedRole}`;
         this.$emit('updated');
         await this.loadUser(this.userId);
@@ -145,8 +168,10 @@ export default {
     },
     async toggleStatus() {
       this.actionError = '';
+      const verb = this.user.disabled ? 'Enable' : 'Disable';
+      if (!confirm(`${verb} ${this.user.username}?`)) return;
       try {
-        const res = await api.toggleUserStatus(this.token, this.userId);
+        const res = await api.toggleUserStatus(this.userId);
         this.actionMsg = res.message;
         this.$emit('updated');
         await this.loadUser(this.userId);
@@ -156,7 +181,7 @@ export default {
     async deleteUser() {
       if (!confirm('Permanently delete this user?')) return;
       try {
-        await api.adminDeleteUser(this.token, this.userId);
+        await api.adminDeleteUser(this.userId);
         this.$emit('updated');
         this.$emit('close');
       } catch (e) { this.actionError = e.message; }
@@ -166,9 +191,15 @@ export default {
       if (role === 'admin') return 'badge-accent';
       return '';
     },
-    fixUrl(url) {
-      if (url && url.includes(':8000/')) return url.replace(':8000/', ':8001/');
-      return url;
+    async resetPassword() {
+      this.actionError = passwordError(this.newPassword);
+      if (this.actionError) return;
+      if (!confirm(`Set a new password for ${this.user.username}?`)) return;
+      try {
+        this.actionMsg = (await api.adminResetPassword(this.userId, this.newPassword)).message;
+        this.newPassword = '';
+        await this.loadUser(this.userId);
+      } catch (e) { this.actionError = e.message; }
     },
   },
 };

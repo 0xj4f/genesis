@@ -6,9 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 RUN pip install --no-cache-dir --upgrade 'pip>=26.2'
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the exact versions resolved in requirements.lock (reproducible builds).
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY . .
 

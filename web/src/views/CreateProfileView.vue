@@ -76,7 +76,8 @@
 </template>
 
 <script>
-import { mapActions, mapGetters } from 'vuex';
+import { mapActions } from 'vuex';
+import { withoutEmpty } from '@/utils/validation';
 
 export default {
   name: 'CreateProfileView',
@@ -92,22 +93,18 @@ export default {
       loading: false,
     };
   },
-  computed: {
-    ...mapGetters(['currentUser']),
-  },
   methods: {
     ...mapActions(['createProfile']),
     async handleCreate() {
       this.error = '';
       this.loading = true;
       try {
-        const username = this.currentUser?.username || 'user';
-        const payload = { ...this.form, sub: username };
-        // Remove empty optional fields
-        Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
-        payload.given_name = this.form.given_name;
-        payload.family_name = this.form.family_name;
-        payload.sub = username;
+        // Identity fields (user id, email, sub) are set by the API.
+        const payload = {
+          ...withoutEmpty(this.form),
+          given_name: this.form.given_name,
+          family_name: this.form.family_name,
+        };
         await this.createProfile(payload);
         this.$router.push('/profile');
       } catch (e) {

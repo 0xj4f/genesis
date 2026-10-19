@@ -11,12 +11,12 @@
         <div class="form-group">
           <label for="username">Username</label>
           <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="admin credentials" required />
+                 placeholder="admin credentials" autocomplete="username" required />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="enter password" required />
+                 placeholder="enter password" autocomplete="current-password" required />
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>

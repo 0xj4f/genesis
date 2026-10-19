@@ -1,0 +1,44 @@
+# Rendered at container start by the nginx image's envsubst step:
+# ${API_ORIGIN} is the Genesis API origin the browser calls (e.g. https://auth.example.com).
+
+# Shared across nginx workers. Static page loads get a short asset burst.
+limit_req_zone $binary_remote_addr zone=web_per_ip:10m rate=30r/s;
+
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+    server_tokens off;
+    limit_req zone=web_per_ip burst=60 nodelay;
+    limit_req_status 429;
+
+    # Security headers for every response. Locations below only use `expires`
+    # (not add_header), so these are inherited everywhere.
+    # - script-src 'self': no inline or third-party scripts can run.
+    # - style-src 'unsafe-inline': Vue binds inline style attributes.
+    # - img-src https:: SSO profile pictures come from provider CDNs.
+    # - connect-src: only this origin and the Genesis API.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: ${API_ORIGIN}; font-src 'self'; connect-src 'self' ${API_ORIGIN}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header Cross-Origin-Opener-Policy same-origin always;
+
+    # SPA: route all paths to index.html for Vue Router history mode
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Always revalidate the app shell so a deploy is picked up immediately.
+    location = /index.html {
+        expires -1;
+    }
+
+    # Build output with content hashes in the file names can be cached long-term.
+    location ~* ^/(js|css|img|fonts)/ {
+        expires 1y;
+    }
+}

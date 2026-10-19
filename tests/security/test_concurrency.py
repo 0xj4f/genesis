@@ -149,7 +149,7 @@ def test_mysql_simultaneous_profile_creation_leaves_one_profile(mysql_sessions, 
             assert db.get(User, mysql_user) is not None
             barrier.wait(timeout=10)
             try:
-                create_profile_service(db, ProfileCreate(user_id=mysql_user, email="concurrency@example.com", given_name="Race", family_name="Test", sub=mysql_user))
+                create_profile_service(db, SimpleNamespace(id=mysql_user, email="concurrency@example.com"), ProfileCreate(given_name="Race", family_name="Test"))
                 return 200
             except HTTPException as error:
                 return error.status_code

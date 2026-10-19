@@ -33,7 +33,6 @@ services:
       OAUTH_DEFAULT_AUDIENCE: genesis-api
       OAUTH_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
       OAUTH_REFRESH_TOKEN_TTL_DAYS: "30"
-      OAUTH_SECRET_KEY: change_me_to_a_random_hex_string_in_production
       OAUTH_PRIVATE_KEY_PATH: ./secrets/dev-private.pem
       OAUTH_PUBLIC_KEY_PATH: ./secrets/dev-public.pem
       OAUTH_JWT_KID: genesis-dev-1
@@ -43,6 +42,16 @@ services:
       MAX_CONCURRENT_SESSIONS: "5"
       RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-30}
       AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-10}
+      # Web app base URL: SSO hand-off redirects, email links, consent page
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8082}
+      # Email verification is optional. Run with EMAIL_VERIFY=true to require
+      # it; messages go to the local mailpit inbox at http://localhost:8025.
+      EMAIL_VERIFY: ${EMAIL_VERIFY:-false}
+      EMAIL_BACKEND: smtp
+      EMAIL_FROM: genesis@localhost
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURITY: none
       # Storage
       STORAGE_BACKEND: local
       UPLOAD_DIR: ./uploads
@@ -54,8 +63,20 @@ services:
     volumes:
       - ./uploads:/app/uploads
 
+  # Development mail catcher (SMTP on 1025, web inbox on 8025). Nothing is delivered.
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        VUE_APP_API_URL: http://localhost:8001
+    environment:
+      API_ORIGIN: http://localhost:8001
     ports:
       - "8082:80"
     depends_on:

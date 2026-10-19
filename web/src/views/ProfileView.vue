@@ -5,26 +5,24 @@
       <div class="spinner" style="width: 32px; height: 32px;"></div>
     </div>
 
-    <!-- No profile -> redirect to create -->
-    <template v-else-if="!hasProfile">
-      <div class="card text-center" style="max-width: 500px; margin: var(--space-2xl) auto;">
-        <h2>Complete your profile</h2>
-        <p class="text-muted mt-sm">You haven't set up your profile yet.</p>
-        <router-link to="/profile/create" class="btn btn-primary btn-lg mt-lg" style="display:inline-flex;">
-          Set Up Profile
-        </router-link>
-      </div>
-    </template>
-
-    <!-- Profile view -->
     <template v-else>
       <div class="profile-layout">
+        <!-- No profile yet: account security and linking still apply -->
+        <div v-if="!hasProfile" class="card text-center">
+          <h2>Complete your profile</h2>
+          <p class="text-muted mt-sm">You haven't set up your profile yet.</p>
+          <router-link to="/profile/create" class="btn btn-primary btn-lg mt-lg" style="display:inline-flex;">
+            Set Up Profile
+          </router-link>
+          <div v-if="linkedMsg" class="alert alert-success mt-md">{{ linkedMsg }}</div>
+        </div>
+
         <!-- Profile Card -->
-        <div class="card profile-card">
+        <div v-else class="card profile-card">
           <div class="profile-top">
             <div class="avatar-section">
-              <div v-if="profile.picture" class="avatar-wrap">
-                <img :src="fixUrl(profile.picture)" class="avatar avatar-lg" alt="Avatar" />
+              <div v-if="avatar" class="avatar-wrap">
+                <img :src="avatar" class="avatar avatar-lg" alt="Avatar" referrerpolicy="no-referrer" />
                 <button class="avatar-edit btn btn-ghost btn-sm" @click="triggerUpload">Change</button>
               </div>
               <div v-else class="avatar avatar-lg avatar-placeholder" @click="triggerUpload"
@@ -45,6 +43,7 @@
           </div>
 
           <div v-if="uploadMsg" class="alert alert-success mt-md">{{ uploadMsg }}</div>
+          <div v-if="linkedMsg" class="alert alert-success mt-md">{{ linkedMsg }}</div>
 
           <!-- Profile details -->
           <div class="profile-details mt-lg">
@@ -144,6 +143,53 @@
           </div>
         </div>
 
+        <!-- Account Security Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Account Security</h2>
+            <p>Changes need your current password (or a recent sign-in for SSO-only accounts).</p>
+          </div>
+
+          <form @submit.prevent="handlePasswordChange" class="stack">
+            <h3 class="text-sm">Change password</h3>
+            <div class="form-group">
+              <label for="current-password">Current password</label>
+              <input v-model="pw.current" id="current-password" type="password" class="form-input"
+                     autocomplete="current-password" :required="user?.is_native"
+                     :placeholder="user?.is_native ? '' : 'leave empty if you never set one'" />
+            </div>
+            <div class="form-group">
+              <label for="new-password">New password</label>
+              <input v-model="pw.next" id="new-password" type="password" class="form-input"
+                     autocomplete="new-password" minlength="12" maxlength="128" required />
+            </div>
+            <div class="form-group">
+              <label for="confirm-password">Confirm new password</label>
+              <input v-model="pw.confirm" id="confirm-password" type="password" class="form-input"
+                     autocomplete="new-password" required />
+            </div>
+            <div v-if="pw.error" class="alert alert-error">{{ pw.error }}</div>
+            <div v-if="pw.msg" class="alert alert-success">{{ pw.msg }}</div>
+            <button type="submit" class="btn btn-secondary" :disabled="pw.saving">Update password</button>
+          </form>
+
+          <form @submit.prevent="handleEmailChange" class="stack mt-lg">
+            <h3 class="text-sm">Change email</h3>
+            <div class="form-group">
+              <label for="new-email">New email</label>
+              <input v-model="mail.email" id="new-email" type="email" class="form-input" autocomplete="email" required />
+            </div>
+            <div class="form-group">
+              <label for="email-password">Current password</label>
+              <input v-model="mail.current" id="email-password" type="password" class="form-input"
+                     autocomplete="current-password" :required="user?.is_native" />
+            </div>
+            <div v-if="mail.error" class="alert alert-error">{{ mail.error }}</div>
+            <div v-if="mail.msg" class="alert alert-success">{{ mail.msg }}</div>
+            <button type="submit" class="btn btn-secondary" :disabled="mail.saving">Update email</button>
+          </form>
+        </div>
+
         <!-- Linked Accounts Card -->
         <div class="card">
           <div class="card-header">
@@ -167,10 +213,10 @@
           <div v-if="availableToLink.length" class="mt-md">
             <p class="text-sm text-muted mb-md">Link another provider:</p>
             <div class="stack">
-              <a v-for="p in availableToLink" :key="p" :href="ssoLinkUrl(p)" class="btn-sso">
+              <button v-for="p in availableToLink" :key="p" type="button" class="btn-sso" @click="linkProvider(p)">
                 <SSOIcon :provider="p" />
                 Link {{ capitalize(p) }}
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -183,6 +229,8 @@
 import { mapGetters, mapActions, mapState } from 'vuex';
 import api from '@/api';
 import SSOIcon from '@/components/SSOIcon.vue';
+import { assetUrl } from '@/utils/url';
+import { passwordError, withoutEmpty } from '@/utils/validation';
 
 export default {
   name: 'ProfileView',
@@ -196,12 +244,16 @@ export default {
       uploadMsg: '',
       form: {},
       linkedProviders: [],
+      linkedMsg: '',
+      pw: { current: '', next: '', confirm: '', error: '', msg: '', saving: false },
+      mail: { email: '', current: '', error: '', msg: '', saving: false },
     };
   },
   computed: {
     ...mapGetters(['hasProfile', 'initials', 'userProfile', 'currentUser']),
     ...mapState(['ssoProviders']),
     profile() { return this.userProfile || {}; },
+    avatar() { return assetUrl(this.profile.picture); },
     formatAddress() {
       const p = this.profile;
       const parts = [p.address_line1, p.address_line2, p.city, p.state, p.zip_code, p.country].filter(Boolean);
@@ -221,6 +273,11 @@ export default {
       this.loadLinked(),
     ]);
     this.loading = false;
+    const linked = this.$route.query.linked;
+    if (typeof linked === 'string') {
+      this.linkedMsg = `${this.capitalize(linked)} is now linked to your account.`;
+      this.$router.replace({ path: '/profile' });
+    }
   },
   methods: {
     ...mapActions(['updateProfile', 'uploadPicture']),
@@ -244,7 +301,7 @@ export default {
       this.editError = '';
       this.saving = true;
       try {
-        await this.updateProfile(this.form);
+        await this.updateProfile(withoutEmpty(this.form));
         this.editing = false;
       } catch (e) {
         this.editError = e.message;
@@ -264,22 +321,59 @@ export default {
     },
     async loadLinked() {
       try {
-        const data = await api.getLinkedProviders(this.$store.state.accessToken);
+        const data = await api.getLinkedProviders();
         this.linkedProviders = data.linked_providers || [];
       } catch { this.linkedProviders = []; }
     },
     async handleUnlink(provider) {
       try {
-        await api.unlinkProvider(this.$store.state.accessToken, provider);
+        await api.unlinkProvider(provider);
         await this.loadLinked();
       } catch (e) { this.editError = e.message; }
     },
-    ssoLinkUrl(provider) { return api.ssoLinkUrl(provider); },
-    capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); },
-    fixUrl(url) {
-      if (url && url.includes(':8000/')) return url.replace(':8000/', ':8001/');
-      return url;
+    async linkProvider(provider) {
+      try {
+        // The API returns the provider URL; the browser comes back via /sso/callback.
+        const { authorization_url } = await api.ssoLink(provider);
+        window.location.assign(authorization_url);
+      } catch (e) { this.editError = e.message; }
     },
+    async handlePasswordChange() {
+      const pw = this.pw;
+      pw.msg = '';
+      pw.error = passwordError(pw.next, pw.confirm);
+      if (pw.error) return;
+      pw.saving = true;
+      try {
+        pw.msg = (await api.changePassword(pw.current, pw.next)).message;
+        pw.current = pw.next = pw.confirm = '';
+      } catch (e) {
+        pw.error = e.message;
+      } finally {
+        pw.saving = false;
+      }
+    },
+    async handleEmailChange() {
+      const mail = this.mail;
+      mail.msg = '';
+      mail.error = '';
+      mail.saving = true;
+      try {
+        const body = { email: mail.email };
+        if (mail.current) body.current_password = mail.current;
+        const user = await api.updateUser(this.user.id, body);
+        mail.msg = user.email_change_pending
+          ? `Check ${mail.email} for a link to confirm the change.`
+          : 'Email updated.';
+        mail.email = mail.current = '';
+        await this.$store.dispatch('fetchMe');
+      } catch (e) {
+        mail.error = e.message;
+      } finally {
+        mail.saving = false;
+      }
+    },
+    capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); },
     formatDate(d) { return d ? new Date(d).toLocaleString() : ''; },
   },
 };

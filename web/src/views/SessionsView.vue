@@ -73,7 +73,7 @@ export default {
     async loadSessions() {
       this.loading = true;
       try {
-        const data = await api.getSessions(this.$store.state.accessToken);
+        const data = await api.getSessions();
         this.sessions = data.sessions || [];
       } catch (e) {
         this.error = e.message;
@@ -84,7 +84,7 @@ export default {
     async handleRevoke(id) {
       this.error = '';
       try {
-        await api.revokeSession(this.$store.state.accessToken, id);
+        await api.revokeSession(id);
         this.successMsg = 'Session revoked.';
         setTimeout(() => { this.successMsg = ''; }, 3000);
         await this.loadSessions();
@@ -95,7 +95,7 @@ export default {
     async handleRevokeAll() {
       this.error = '';
       try {
-        const data = await api.revokeAllSessions(this.$store.state.accessToken);
+        const data = await api.revokeAllSessions();
         this.successMsg = data.message || 'All other sessions revoked.';
         setTimeout(() => { this.successMsg = ''; }, 3000);
         await this.loadSessions();
