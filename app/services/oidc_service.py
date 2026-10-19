@@ -3,7 +3,8 @@
 import secrets
 import hashlib
 import base64
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -63,6 +64,8 @@ def validate_authorize_request(
     client = get_oauth_client_by_id_db(db, client_id)
     if not client:
         raise HTTPException(status_code=400, detail="Unknown client_id")
+    if "authorization_code" not in (client.grant_types or []):
+        raise HTTPException(status_code=400, detail="authorization_code grant not allowed for this client")
 
     # Validate redirect_uri
     if redirect_uri not in (client.redirect_uris or []):
@@ -77,6 +80,10 @@ def validate_authorize_request(
     # PKCE validation
     if code_challenge and code_challenge_method != "S256":
         raise HTTPException(status_code=400, detail="Only code_challenge_method=S256 is supported")
+    if code_challenge_method and not code_challenge:
+        raise HTTPException(status_code=400, detail="code_challenge is required")
+    if code_challenge and not re.fullmatch(r"[A-Za-z0-9_-]{43}", code_challenge):
+        raise HTTPException(status_code=400, detail="Invalid S256 code_challenge")
 
     # Public clients must use PKCE
     if not client.is_confidential and not code_challenge:
@@ -138,6 +145,8 @@ def exchange_authorization_code(
     client = get_oauth_client_by_id_db(db, client_id)
     if not client:
         raise HTTPException(status_code=400, detail="Unknown client")
+    if "authorization_code" not in (client.grant_types or []):
+        raise HTTPException(status_code=400, detail="authorization_code grant not allowed for this client")
 
     # Authenticate confidential clients
     if client.is_confidential:
@@ -154,19 +163,22 @@ def exchange_authorization_code(
     if authz_code.code_challenge:
         if not code_verifier:
             raise HTTPException(status_code=400, detail="code_verifier required for PKCE")
+        if not re.fullmatch(r"[A-Za-z0-9._~-]{43,128}", code_verifier):
+            raise HTTPException(status_code=400, detail="Invalid code_verifier")
         expected = base64.urlsafe_b64encode(
             hashlib.sha256(code_verifier.encode("ascii")).digest()
         ).rstrip(b"=").decode("ascii")
-        if expected != authz_code.code_challenge:
+        if not secrets.compare_digest(expected, authz_code.code_challenge):
             raise HTTPException(status_code=400, detail="Invalid code_verifier")
-
-    # Mark code as used
-    mark_authz_code_used_db(db, code)
 
     # Load user
     user = get_user_by_id_db(db, authz_code.user_id)
     if not user or user.disabled or not user.is_active:
         raise HTTPException(status_code=400, detail="User account unavailable")
+
+    # Atomic single-use claim, after validating the caller and before minting.
+    if not mark_authz_code_used_db(db, code):
+        raise HTTPException(status_code=400, detail="Invalid or expired authorization code")
 
     scopes = authz_code.scope.split()
 
@@ -294,10 +306,10 @@ def get_userinfo(db: Session, user_id: str, scopes: list[str]) -> dict:
 
 def _create_id_token(user, client_id: str, nonce: str | None, access_token: str, db: Session) -> str:
     """Create an OIDC ID Token (JWT)."""
-    from jose import jwt as jose_jwt
+    import jwt
 
     kid, key, algorithm = get_signing_key()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # at_hash: left half of SHA-256 of access_token
     at_hash_digest = hashlib.sha256(access_token.encode("ascii")).digest()
@@ -328,4 +340,4 @@ def _create_id_token(user, client_id: str, nonce: str | None, access_token: str,
             claims["picture"] = profile.picture
 
     headers = {"kid": kid} if kid else {}
-    return jose_jwt.encode(claims, key, algorithm=algorithm, headers=headers)
+    return jwt.encode(claims, key, algorithm=algorithm, headers=headers)

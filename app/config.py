@@ -1,9 +1,20 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 from functools import lru_cache
+from typing import Literal
+from pydantic import Field, SecretStr, model_validator
+from urllib.parse import urlsplit
 
 
 class Settings(BaseSettings):
+    ENVIRONMENT: Literal["development", "production", "test"] = "development"
+    ALLOWED_HOSTS: str = "*"
+    RATE_LIMIT_PER_SECOND: int = Field(30, ge=1, le=10000)
+    AUTH_RATE_LIMIT_PER_MINUTE: int = Field(10, ge=1, le=10000)
+    REFRESH_RATE_LIMIT_PER_MINUTE: int = Field(60, ge=1, le=10000)
+    MAX_REQUEST_BODY_BYTES: int = Field(6 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+    BOOTSTRAP_ROOT_PASSWORD: Optional[SecretStr] = None
+
     # Database
     MYSQL_DEV_USER: str = "dev_project"
     MYSQL_DEV_PASSWORD: str = "SECURE_PASSWORD"
@@ -31,7 +42,7 @@ class Settings(BaseSettings):
     CORS_ALLOW_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080"
 
     # Sessions
-    MAX_CONCURRENT_SESSIONS: int = 5
+    MAX_CONCURRENT_SESSIONS: int = Field(5, ge=1, le=100)
 
     # SSO Providers (future - Phase 5)
     GOOGLE_CLIENT_ID: Optional[str] = None
@@ -53,6 +64,30 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    @model_validator(mode="after")
+    def validate_production(self):
+        if self.ENVIRONMENT == "production":
+            if self.OAUTH_ALGORITHM != "RS256" or not (self.OAUTH_PRIVATE_KEY_PATH and self.OAUTH_PUBLIC_KEY_PATH):
+                raise ValueError("Production requires RS256 private and public key paths")
+            issuer = urlsplit(self.OAUTH_ISSUER)
+            if (issuer.scheme != "https" or not issuer.netloc or issuer.username or issuer.password
+                    or issuer.query or issuer.fragment):
+                raise ValueError("Production OAUTH_ISSUER must be an absolute HTTPS URL without credentials, query or fragment")
+            if not self.allowed_hosts or any("*" in host for host in self.allowed_hosts):
+                raise ValueError("Production requires explicit ALLOWED_HOSTS")
+            if not self.cors_origins or any(
+                urlsplit(origin).scheme != "https" or "*" in origin
+                or not urlsplit(origin).netloc or urlsplit(origin).path
+                or urlsplit(origin).query or urlsplit(origin).fragment
+                for origin in self.cors_origins
+            ):
+                raise ValueError("Production CORS origins must be explicit HTTPS origins without paths")
+        return self
+
+    @property
+    def allowed_hosts(self) -> list[str]:
+        return [host.strip() for host in self.ALLOWED_HOSTS.split(",") if host.strip()]
 
     @property
     def database_url(self) -> str:

@@ -7,9 +7,12 @@ from app.database.session import SessionLocal
 from app.models.user_db_model import User
 from app.models.profile_db_model import Profile
 from app.utils.security import hash_password
+from app.config import get_settings
+from app.models.user_api_model import validate_password_strength
 
 
 def seed_adam():
+    settings = get_settings()
     db = SessionLocal()
     try:
         existing_root = db.query(User).filter(User.role == "root").first()
@@ -17,7 +20,13 @@ def seed_adam():
             print(f"[seed] ROOT user already exists: {existing_root.username} ({existing_root.email})")
             return
 
-        password = secrets.token_urlsafe(16)
+        if settings.BOOTSTRAP_ROOT_PASSWORD:
+            password = settings.BOOTSTRAP_ROOT_PASSWORD.get_secret_value()
+            validate_password_strength(password)
+        elif settings.ENVIRONMENT == "production":
+            raise RuntimeError("Set BOOTSTRAP_ROOT_PASSWORD before creating the production ROOT user")
+        else:
+            password = secrets.token_urlsafe(16)
         hashed = hash_password(password)
 
         adam = User(
@@ -49,7 +58,10 @@ def seed_adam():
         print("=" * 60)
         print(f"  Username: adam")
         print(f"  Email:    adam@genesis.local")
-        print(f"  Password: {password}")
+        if settings.ENVIRONMENT != "production":
+            print(f"  Password: {password}")
+        else:
+            print("  Password: supplied via BOOTSTRAP_ROOT_PASSWORD (not logged)")
         print(f"  Role:     root")
         print("=" * 60)
         print("  SAVE THIS PASSWORD. It will not be shown again.")
@@ -58,6 +70,8 @@ def seed_adam():
     except Exception as e:
         db.rollback()
         print(f"[seed] Error seeding Adam: {e}", file=sys.stderr)
+        if settings.ENVIRONMENT == "production":
+            raise
     finally:
         db.close()
 

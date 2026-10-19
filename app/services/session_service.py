@@ -16,6 +16,7 @@ from app.database.session_db_interface import (
 )
 from app.config import get_settings
 from app.utils.helpers import parse_device_name
+from app.models.user_db_model import User
 
 settings = get_settings()
 
@@ -28,19 +29,23 @@ def create_session(
     login_method: str = "password",
 ) -> str:
     """Create a new session and enforce concurrent session limits. Returns session_id."""
+    # Serialize the count/evict/insert transaction for this user across workers.
+    user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
+    if not user or user.disabled or not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is deactivated")
     # Enforce session limit
     active_count = count_active_sessions_db(db, user_id)
     while active_count >= settings.MAX_CONCURRENT_SESSIONS:
         oldest = get_oldest_active_session_db(db, user_id)
         if oldest:
-            revoke_session_db(db, oldest.id, reason="session_limit")
+            revoke_session_db(db, oldest.id, reason="session_limit", commit=False)
             active_count -= 1
         else:
             break
 
     session_id = str(uuid4())
-    ip_address = request.client.host if request.client else None
-    user_agent = request.headers.get("user-agent", "")
+    ip_address = request.client.host if request and request.client else None
+    user_agent = request.headers.get("user-agent", "")[:2048] if request else ""
 
     session_data = {
         "id": session_id,
@@ -93,7 +98,7 @@ def revoke_all_sessions(
     return revoke_all_user_sessions_db(db, user_id, except_session_id, reason)
 
 
-def validate_refresh_against_session(db: DBSession, jti: str, sid: str) -> str:
+def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id: str) -> str:
     """Validate a refresh token's jti against its session.
 
     Returns the session_id if valid.
@@ -101,7 +106,7 @@ def validate_refresh_against_session(db: DBSession, jti: str, sid: str) -> str:
     """
     session = get_session_by_id_db(db, sid)
 
-    if not session or not session.is_active:
+    if not session or session.user_id != user_id or not session.is_active or session.expires_at <= datetime.utcnow():
         raise HTTPException(status_code=401, detail="Session expired or revoked")
 
     if session.refresh_token_jti != jti:
@@ -115,6 +120,10 @@ def validate_refresh_against_session(db: DBSession, jti: str, sid: str) -> str:
     return session.id
 
 
-def rotate_session_token(db: DBSession, session_id: str, new_jti: str) -> None:
+def rotate_session_token(db: DBSession, session_id: str, new_jti: str, expected_jti: str, user_id: str) -> None:
     """Update the session's refresh token JTI after rotation."""
-    update_session_jti_db(db, session_id, new_jti)
+    if not update_session_jti_db(db, session_id, new_jti, expected_jti, user_id):
+        # Refresh the row after the failed atomic update and preserve replay
+        # detection (a reused refresh token revokes the affected session).
+        validate_refresh_against_session(db, expected_jti, session_id, user_id)
+        raise HTTPException(status_code=401, detail="Session expired or revoked")

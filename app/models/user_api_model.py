@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, SecretStr, field_validator
+from pydantic import BaseModel, EmailStr, SecretStr, Field, AfterValidator, field_validator
+from typing import Annotated
 from typing import Optional
 import re
 from uuid import UUID
@@ -6,6 +7,8 @@ from datetime import datetime
 
 
 def validate_password_strength(password_str: str) -> str:
+    if len(password_str.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes")
     if len(password_str) < 12:
         raise ValueError("Password must be at least 12 characters long")
     if not re.search(r"[a-z]", password_str):
@@ -19,9 +22,18 @@ def validate_password_strength(password_str: str) -> str:
     return password_str
 
 
+def validate_username(value: str) -> str:
+    if not value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("Username must be nonblank and contain no control characters")
+    return value
+
+
+Username = Annotated[str, Field(min_length=1, max_length=100), AfterValidator(validate_username)]
+
+
 class UserBase(BaseModel):
-    username: str
-    email: EmailStr
+    username: Username
+    email: EmailStr = Field(max_length=255)
     password: Optional[SecretStr] = None  # Nullable for SSO users
     disabled: Optional[bool] = False
 
@@ -39,8 +51,8 @@ class UserBase(BaseModel):
 
 
 class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
+    username: Username
+    email: EmailStr = Field(max_length=255)
     password: SecretStr
 
     @field_validator("password", mode="before")
@@ -57,7 +69,9 @@ class UserCreate(BaseModel):
 class User(BaseModel):
     id: UUID
     username: str
-    email: EmailStr
+    # Responses must serialize legacy/internal addresses (e.g. the seeded
+    # adam@genesis.local). Create/update requests still validate EmailStr.
+    email: str
     disabled: Optional[bool] = False
     is_active: Optional[bool] = True
     email_verified: Optional[bool] = False
@@ -74,8 +88,8 @@ class User(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = None
+    username: Optional[Username] = None
+    email: Optional[EmailStr] = Field(None, max_length=255)
     password: Optional[SecretStr] = None
 
     @field_validator("password", mode="before")

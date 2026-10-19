@@ -35,11 +35,17 @@
 from app.models.profile_db_model import Profile
 from app.models.profile_api_model import ProfileCreate, ProfileUpdate
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 
 def create_profile_db(db: Session, profile_create: ProfileCreate) -> Profile:
     db_profile = Profile(**profile_create.dict())
     db.add(db_profile)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Profile already exists for this user")
     db.refresh(db_profile)
     return db_profile
 

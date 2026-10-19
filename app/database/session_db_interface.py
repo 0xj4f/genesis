@@ -12,7 +12,7 @@ def create_session_db(db: DBSession, session_data: dict) -> Session:
 
 
 def get_session_by_id_db(db: DBSession, session_id: str) -> Session | None:
-    return db.query(Session).filter(Session.id == session_id).first()
+    return db.query(Session).populate_existing().filter(Session.id == session_id).first()
 
 
 def get_session_by_jti_db(db: DBSession, jti: str) -> Session | None:
@@ -26,29 +26,35 @@ def get_active_sessions_by_user_db(db: DBSession, user_id: str) -> list[Session]
     return db.query(Session).filter(
         Session.user_id == user_id,
         Session.is_active == True,  # noqa: E712
+        Session.expires_at > datetime.utcnow(),
     ).order_by(Session.created_at.desc()).all()
 
 
-def update_session_jti_db(db: DBSession, session_id: str, new_jti: str) -> Session | None:
-    session = db.query(Session).filter(Session.id == session_id).first()
-    if not session:
-        return None
-    session.refresh_token_jti = new_jti
-    session.last_activity_at = datetime.utcnow()
+def update_session_jti_db(db: DBSession, session_id: str, new_jti: str, expected_jti: str, user_id: str) -> bool:
+    # Compare-and-swap in the database: exactly one concurrent refresh can win.
+    count = db.query(Session).filter(
+        Session.id == session_id,
+        Session.user_id == user_id,
+        Session.refresh_token_jti == expected_jti,
+        Session.is_active == True,  # noqa: E712
+        Session.expires_at > datetime.utcnow(),
+    ).update({"refresh_token_jti": new_jti, "last_activity_at": datetime.utcnow()}, synchronize_session=False)
     db.commit()
-    db.refresh(session)
-    return session
+    return count == 1
 
 
-def revoke_session_db(db: DBSession, session_id: str, reason: str = "user_logout") -> Session | None:
-    session = db.query(Session).filter(Session.id == session_id).first()
+def revoke_session_db(db: DBSession, session_id: str, reason: str = "user_logout", commit: bool = True) -> Session | None:
+    session = db.query(Session).filter(Session.id == session_id).with_for_update().populate_existing().first()
     if not session:
         return None
     session.is_active = False
     session.revoked_at = datetime.utcnow()
     session.revoked_reason = reason
-    db.commit()
-    db.refresh(session)
+    if commit:
+        db.commit()
+        db.refresh(session)
+    else:
+        db.flush()
     return session
 
 
@@ -72,14 +78,18 @@ def revoke_all_user_sessions_db(
 
 
 def count_active_sessions_db(db: DBSession, user_id: str) -> int:
-    return db.query(Session).filter(
+    # A locking read sees current rows even when authentication already opened
+    # a MySQL REPEATABLE READ snapshot before acquiring the user's row lock.
+    return len(db.query(Session.id).filter(
         Session.user_id == user_id,
         Session.is_active == True,  # noqa: E712
-    ).count()
+        Session.expires_at > datetime.utcnow(),
+    ).with_for_update().all())
 
 
 def get_oldest_active_session_db(db: DBSession, user_id: str) -> Session | None:
     return db.query(Session).filter(
         Session.user_id == user_id,
         Session.is_active == True,  # noqa: E712
-    ).order_by(Session.created_at.asc()).first()
+        Session.expires_at > datetime.utcnow(),
+    ).order_by(Session.created_at.asc()).with_for_update().populate_existing().first()

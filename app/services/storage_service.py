@@ -1,7 +1,7 @@
 """Pluggable storage backend for file uploads (avatars, etc.)."""
 
 import os
-import shutil
+from pathlib import Path
 from abc import ABC, abstractmethod
 
 from app.config import get_settings
@@ -26,15 +26,22 @@ class LocalStorageBackend(StorageBackend):
         self.base_dir = base_dir
         self.base_url = base_url.rstrip("/")
 
+    def _path(self, key: str) -> Path:
+        base = Path(self.base_dir).resolve()
+        path = (base / key).resolve()
+        if not path.is_relative_to(base) or path == base:
+            raise ValueError("Invalid storage key")
+        return path
+
     async def upload(self, key: str, data: bytes, content_type: str) -> str:
-        file_path = os.path.join(self.base_dir, key)
+        file_path = self._path(key)
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(data)
         return f"{self.base_url}/{key}"
 
     async def delete(self, key: str) -> None:
-        file_path = os.path.join(self.base_dir, key)
+        file_path = self._path(key)
         if os.path.exists(file_path):
             os.remove(file_path)
 

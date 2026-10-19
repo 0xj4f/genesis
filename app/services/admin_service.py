@@ -134,17 +134,20 @@ def update_user_role(db: Session, user_id: str, new_role: str, current_user_role
     if new_role == "root" and current_user_role != "root":
         raise HTTPException(status_code=403, detail="Only ROOT can assign ROOT role")
 
-    user = get_user_by_id_db(db, user_id)
+    user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if user.role == "root" and current_user_role != "root":
+        raise HTTPException(status_code=403, detail="Only ROOT can modify a ROOT user")
     user.role = new_role
     db.commit()
     return {"message": f"User role updated to {new_role}"}
 
 
 def toggle_user_status(db: Session, user_id: str) -> dict:
-    user = get_user_by_id_db(db, user_id)
+    from app.models.user_db_model import User
+    user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":

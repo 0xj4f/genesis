@@ -29,6 +29,7 @@ def cmd_generate_keys(args):
 
     with open(private_path, "wb") as f:
         f.write(private_pem)
+    os.chmod(private_path, 0o600)
     with open(public_path, "wb") as f:
         f.write(public_pem)
 
