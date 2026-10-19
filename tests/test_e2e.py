@@ -528,30 +528,39 @@ def test_33_admin_create_client():
 
 
 def test_34_oidc_authorize():
-    """Authorization endpoint returns redirect with code."""
+    """Third-party client: GET authorize needs consent; approving returns a redirect with code."""
     if "client_id" not in state:
         print(f"  [SKIP] No client_id")
         return
 
-    resp = requests.get(f"{BASE}/oauth/authorize", params={
+    params = {
         "response_type": "code",
         "client_id": state["client_id"],
         "redirect_uri": "http://localhost:3000/callback",
         "scope": "openid profile email offline_access",
         "state": "e2e_test_state",
         "nonce": "e2e_test_nonce",
-    }, headers={"Authorization": f"Bearer {state['access_token']}"}, allow_redirects=False)
+    }
+    headers = {"Authorization": f"Bearer {state['access_token']}"}
 
-    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}"
-    location = resp.headers["location"]
+    # Only first-party clients are approved without asking; the client from test 33 is third-party.
+    resp = requests.get(f"{BASE}/oauth/authorize", params=params, headers=headers, allow_redirects=False)
+    assert resp.status_code == 403, f"Expected 403 consent_required, got {resp.status_code}"
+    assert resp.json()["detail"] == "consent_required"
+
+    # What the web app's consent screen sends when the user approves.
+    code, body = api("post", "/oauth/authorize", token=state["access_token"], json_data={**params, "consent": "approve"})
+    assert code == 200, f"Consent approval failed: {body}"
+    location = body["redirect_to"]
+    assert location.startswith("http://localhost:3000/callback?")
     assert "code=" in location
     assert "state=e2e_test_state" in location
 
     # Extract code
     from urllib.parse import urlparse, parse_qs
-    params = parse_qs(urlparse(location).query)
-    state["auth_code"] = params["code"][0]
-    print(f"  [PASS] Authorize -> code={state['auth_code'][:20]}...")
+    query = parse_qs(urlparse(location).query)
+    state["auth_code"] = query["code"][0]
+    print(f"  [PASS] Authorize -> consent required, approved, code={state['auth_code'][:20]}...")
 
 
 def test_35_oidc_token_exchange():
