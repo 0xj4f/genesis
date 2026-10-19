@@ -1,18 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, AfterValidator
+from pydantic import BaseModel, Field, AfterValidator
 from typing import Optional, Annotated
-from urllib.parse import urlsplit
 from uuid import UUID
 from datetime import datetime, date
-
-
-def validate_picture_url(value: str) -> str:
-    parsed = urlsplit(value)
-    if any(ord(c) < 32 for c in value) or not (
-        value.startswith("/avatars/") and not value.startswith("//")
-        or parsed.scheme in {"http", "https"} and parsed.netloc and not parsed.username and not parsed.password
-    ):
-        raise ValueError("Picture must be an HTTP(S) URL or local avatar path")
-    return value
 
 
 def validate_birth_date(value: date) -> date:
@@ -24,17 +13,20 @@ def validate_birth_date(value: date) -> date:
 Name = Annotated[str, Field(max_length=100)]
 ShortText = Annotated[str, Field(max_length=20)]
 Address = Annotated[str, Field(max_length=255)]
-PictureURL = Annotated[str, Field(max_length=255), AfterValidator(validate_picture_url)]
 BirthDate = Annotated[date, AfterValidator(validate_birth_date)]
 
 
-class ProfileBase(BaseModel):
-    user_id: Optional[UUID] = None
+class ProfileFields(BaseModel):
+    """Fields a user may set on their own profile.
+
+    user_id, email, sub and picture are server-controlled: sub is always the
+    user's id, and picture changes only through the upload endpoint or the SSO
+    import (an arbitrary URL would make every viewer's browser fetch it).
+    Unknown fields sent by clients are ignored.
+    """
     given_name: Name
     family_name: Name
     nick_name: Optional[Name] = None
-    email: Optional[EmailStr] = Field(None, max_length=255)
-    sub: str = Field(max_length=255)
     date_of_birth: Optional[BirthDate] = None
     mobile_number: Optional[ShortText] = None
     address_line1: Optional[Address] = None
@@ -43,16 +35,18 @@ class ProfileBase(BaseModel):
     state: Optional[Name] = None
     zip_code: Optional[ShortText] = None
     country: Optional[Name] = None
-    picture: Optional[PictureURL] = None
 
 
-class ProfileCreate(ProfileBase):
+class ProfileCreate(ProfileFields):
     pass
 
 
-class Profile(ProfileBase):
-    email: Optional[str] = None  # Serialize stored/internal addresses in responses.
+class Profile(ProfileFields):
     id: int
+    user_id: Optional[UUID] = None
+    email: Optional[str] = None  # Serialize stored/internal addresses in responses.
+    sub: Optional[str] = None
+    picture: Optional[str] = None
     phone_verified: Optional[bool] = False
     picture_key: Optional[str] = None
     picture_updated_at: Optional[datetime] = None
@@ -66,8 +60,6 @@ class ProfileUpdate(BaseModel):
     given_name: Optional[Name] = None
     family_name: Optional[Name] = None
     nick_name: Optional[Name] = None
-    picture: Optional[PictureURL] = None
-    sub: Optional[str] = Field(None, max_length=255)
     date_of_birth: Optional[BirthDate] = None
     mobile_number: Optional[ShortText] = None
     address_line1: Optional[Address] = None

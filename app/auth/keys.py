@@ -1,5 +1,6 @@
 import time
 import base64
+import hashlib
 from typing import Optional
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -9,6 +10,11 @@ settings = get_settings()
 
 _key_cache: dict = {}
 _cache_timestamp: float = 0.0
+
+# SHA-256 of the HS256 secret that used to be committed as the default
+# OAUTH_SECRET_KEY. It is public, so it must never sign tokens again.
+_LEGACY_SECRET_SHA256 = "8d8ffc0418c2640b50c061415597da6080705de4d1acdb1c14eedf14d51363df"
+_MIN_SECRET_LENGTH = 32
 
 
 def _load_private_key_from_file(path: str):
@@ -61,30 +67,39 @@ def _load_keys():
 
     keys = {}
 
-    # Try file-based keys
+    # File-based keys. Configured paths must exist: a missing file is a
+    # deployment error, never a reason to fall back to a weaker key.
     if settings.OAUTH_PRIVATE_KEY_PATH and settings.OAUTH_PUBLIC_KEY_PATH:
-        try:
-            private_key = _load_private_key_from_file(settings.OAUTH_PRIVATE_KEY_PATH)
-            public_key = _load_public_key_from_file(settings.OAUTH_PUBLIC_KEY_PATH)
-            if (not isinstance(private_key, rsa.RSAPrivateKey)
-                    or not isinstance(public_key, rsa.RSAPublicKey)
-                    or private_key.key_size < 2048
-                    or private_key.public_key().public_numbers() != public_key.public_numbers()):
-                raise ValueError("Signing keys must be a matching RSA key pair of at least 2048 bits")
-            kid = settings.OAUTH_JWT_KID
-            keys[kid] = {
-                "kid": kid,
-                "algorithm": "RS256",
-                "private_key": private_key,
-                "public_key": public_key,
-                "is_current": True,
-            }
-        except FileNotFoundError:
-            pass
+        private_key = _load_private_key_from_file(settings.OAUTH_PRIVATE_KEY_PATH)
+        public_key = _load_public_key_from_file(settings.OAUTH_PUBLIC_KEY_PATH)
+        if (not isinstance(private_key, rsa.RSAPrivateKey)
+                or not isinstance(public_key, rsa.RSAPublicKey)
+                or private_key.key_size < 2048
+                or private_key.public_key().public_numbers() != public_key.public_numbers()):
+            raise ValueError("Signing keys must be a matching RSA key pair of at least 2048 bits")
+        kid = settings.OAUTH_JWT_KID
+        keys[kid] = {
+            "kid": kid,
+            "algorithm": "RS256",
+            "private_key": private_key,
+            "public_key": public_key,
+            "is_current": True,
+        }
 
     _key_cache = keys
     _cache_timestamp = now
     return keys
+
+
+def _development_secret() -> Optional[str]:
+    """HS256 secret allowed only outside production, when explicitly set,
+    long enough, and not the formerly committed default."""
+    if settings.ENVIRONMENT == "production" or not settings.OAUTH_SECRET_KEY:
+        return None
+    secret = settings.OAUTH_SECRET_KEY.get_secret_value()
+    if len(secret) < _MIN_SECRET_LENGTH or hashlib.sha256(secret.encode()).hexdigest() == _LEGACY_SECRET_SHA256:
+        return None
+    return secret
 
 
 def get_signing_key() -> tuple[str, object, str]:
@@ -96,10 +111,15 @@ def get_signing_key() -> tuple[str, object, str]:
         if key_info.get("is_current"):
             return kid, key_info["private_key"], key_info["algorithm"]
 
-    # Fallback to HS256 with shared secret
+    secret = _development_secret()
+    if secret:
+        return "", secret, "HS256"
     if settings.ENVIRONMENT == "production":
         raise RuntimeError("Production signing keys are unavailable")
-    return "", settings.OAUTH_SECRET_KEY, "HS256"
+    raise RuntimeError(
+        "No signing key: set OAUTH_PRIVATE_KEY_PATH and OAUTH_PUBLIC_KEY_PATH, or (outside production) "
+        f"a unique OAUTH_SECRET_KEY of at least {_MIN_SECRET_LENGTH} characters"
+    )
 
 
 def get_verification_keys() -> dict:
@@ -120,9 +140,10 @@ def get_verification_key_by_kid(kid: str) -> Optional[tuple[object, str]]:
     if kid in keys:
         return keys[kid]["public_key"], keys[kid]["algorithm"]
 
-    # Fallback: if no kid match and we're using HS256
-    if not keys and settings.ENVIRONMENT != "production":
-        return settings.OAUTH_SECRET_KEY, "HS256"
+    # Development HS256 mode (no RSA keys configured)
+    secret = None if keys else _development_secret()
+    if secret:
+        return secret, "HS256"
 
     return None
 

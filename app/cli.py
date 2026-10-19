@@ -4,8 +4,10 @@ Usage:
     python -m app.cli generate-keys                 Generate dev RSA key pair
     python -m app.cli rotate-keys                   Rotate signing key (DB-backed)
     python -m app.cli create-client NAME             Register an OAuth client
+    python -m app.cli reset-password USERNAME        Emergency password reset (reads stdin)
 """
 import argparse
+import getpass
 import os
 import sys
 import secrets
@@ -52,7 +54,7 @@ def cmd_create_client(args):
     """Register a new OAuth client in the database."""
     from app.database.session import SessionLocal
     from app.database.oauth_client_db_interface import create_oauth_client_db, get_oauth_client_by_name_db
-    from app.utils.security import hash_password
+    from app.utils.security import hash_client_secret
 
     db = SessionLocal()
     try:
@@ -63,7 +65,7 @@ def cmd_create_client(args):
 
         # Generate client secret
         client_secret = secrets.token_urlsafe(32)
-        client_secret_hash = hash_password(client_secret)
+        client_secret_hash = hash_client_secret(client_secret)
 
         redirect_uris = [u.strip() for u in args.redirect_uris.split(",")]
         scopes = [s.strip() for s in args.scopes.split(",")]
@@ -79,6 +81,7 @@ def cmd_create_client(args):
             "grant_types": grant_types,
             "is_active": True,
             "is_confidential": not args.public,
+            "is_first_party": args.first_party,
         })
 
         print(f"OAuth client created:")
@@ -90,8 +93,45 @@ def cmd_create_client(args):
         print(f"  audiences:     {audiences}")
         print(f"  grant_types:   {grant_types}")
         print(f"  confidential:  {client.is_confidential}")
+        print(f"  first-party:   {client.is_first_party}")
         print()
         print("IMPORTANT: Save the client_secret now. It cannot be retrieved later.")
+    finally:
+        db.close()
+
+
+def cmd_reset_password(args):
+    """Break-glass password reset for an account (e.g. after a rollback).
+
+    The new password is read from stdin (or an interactive prompt) and is never
+    printed. All of the account's sessions are revoked.
+    """
+    from app.database.session import SessionLocal
+    from app.database.user_db_interface import get_user_by_username_db, set_user_password_db
+    from app.models.user_api_model import validate_password_strength
+    from app.utils.security import hash_password
+
+    if sys.stdin.isatty():
+        password = getpass.getpass("New password: ")
+        if getpass.getpass("Repeat new password: ") != password:
+            print("Passwords do not match.")
+            sys.exit(1)
+    else:
+        password = sys.stdin.readline().rstrip("\n")
+    try:
+        validate_password_strength(password)
+    except ValueError as e:
+        print(f"Rejected: {e}")
+        sys.exit(1)
+
+    db = SessionLocal()
+    try:
+        user = get_user_by_username_db(db, args.username)
+        if not user:
+            print(f"No user named '{args.username}'.")
+            sys.exit(1)
+        set_user_password_db(db, user, hash_password(password), reason="cli_password_reset")
+        print(f"Password reset for '{args.username}'. All sessions were revoked.")
     finally:
         db.close()
 
@@ -119,7 +159,13 @@ def main():
     client_parser.add_argument("--audiences", default="genesis-api", help="Comma-separated allowed audiences")
     client_parser.add_argument("--grant-types", default="authorization_code,refresh_token", help="Comma-separated grant types")
     client_parser.add_argument("--public", action="store_true", help="Create as public client (no secret required, PKCE mandatory)")
+    client_parser.add_argument("--first-party", action="store_true", help="Skip the consent screen (only for clients you operate)")
     client_parser.set_defaults(func=cmd_create_client)
+
+    # reset-password
+    reset_parser = subparsers.add_parser("reset-password", help="Emergency password reset (password read from stdin)")
+    reset_parser.add_argument("username", help="Account username")
+    reset_parser.set_defaults(func=cmd_reset_password)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

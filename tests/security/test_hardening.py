@@ -196,7 +196,7 @@ def test_expired_mismatched_and_unbound_refresh_tokens_rejected(client, make_use
     assert row.is_active
 
 
-@pytest.mark.parametrize("username,password", [("", "ValidPassword123!"), (" " * 5, "ValidPassword123!"), ("x" * 101, "ValidPassword123!"), ("bad\nname", "ValidPassword123!"), ("valid", "Aa1!" + "x" * 69), ("valid", "Aa1!" + "界" * 23)])
+@pytest.mark.parametrize("username,password", [("", "ValidPassword123!"), (" " * 5, "ValidPassword123!"), ("x" * 101, "ValidPassword123!"), ("bad\nname", "ValidPassword123!"), ("valid", "Aa1!short"), ("valid", "Aa1!" + "x" * 125), ("valid", "Aa1!" + "界" * 125)])
 def test_invalid_user_input_rejected(username, password):
     with pytest.raises(ValidationError):
         UserCreate(username=username, email="test@example.com", password=password)
@@ -208,10 +208,15 @@ def test_long_login_password_is_rejected_without_hash_error(client, make_user):
     assert not verify_password("a" * 73, "invalid hash")
 
 
-@pytest.mark.parametrize("value", [{"mobile_number": "1" * 21}, {"city": "x" * 101}, {"picture": "javascript:alert(1)"}, {"picture": "//evil.example/image"}, {"date_of_birth": "2999-01-01"}])
+@pytest.mark.parametrize("value", [{"mobile_number": "1" * 21}, {"city": "x" * 101}, {"date_of_birth": "2999-01-01"}])
 def test_invalid_profile_fields_rejected(value):
     with pytest.raises(ValidationError):
         ProfileUpdate(**value)
+
+
+@pytest.mark.parametrize("value", [{"picture": "javascript:alert(1)"}, {"picture": "https://tracker.example/pixel.png"}, {"sub": "spoofed"}])
+def test_profile_picture_and_sub_are_not_client_settable(value):
+    assert ProfileUpdate(**value).model_dump(exclude_unset=True) == {}
 
 
 @pytest.mark.parametrize("uri", ["javascript:alert(1)", "https://app.example/callback#fragment", "https://user:pass@app.example/callback", "http://app.example/callback", "//app.example/callback"])
@@ -267,7 +272,7 @@ def test_unverified_provider_email_cannot_link_verified_existing_user(db, make_u
     provider = SimpleNamespace(name="google")
     monkeypatch.setattr(sso_service, "_create_oauth_account", lambda *a: pytest.fail("Must not link unverified email"))
     with pytest.raises(HTTPException) as error:
-        sso_service._handle_login_or_register(db, provider, {"provider_user_id": "attacker", "email": existing.email, "email_verified": False}, "token", None, None, {}, None)
+        sso_service._handle_login_or_register(db, provider, {"provider_user_id": "attacker", "email": existing.email, "email_verified": False}, None)
     assert error.value.status_code == 409
 
 
@@ -277,14 +282,17 @@ def test_provider_email_verified_requires_boolean_true():
 
 
 def test_sso_state_expires_is_single_use_and_binds_to_browser(client, monkeypatch, clock, store):
-    provider = SimpleNamespace(name="google", client_id="client", redirect_uri="https://auth.example/auth/sso/google/callback", scopes=["openid", "email"], authorize_url="https://provider.example/authorize")
+    provider = SimpleNamespace(name="google", client_id="client", redirect_uri="https://auth.example/auth/sso/google/callback", scopes=["openid", "email"], authorize_url="https://provider.example/authorize", pkce=True, oidc=True)
     monkeypatch.setattr(sso_service, "get_provider", lambda name: provider)
     monkeypatch.setattr(sso_service, "get_security_store", lambda: store)
     response = client.get("/auth/sso/google/authorize", follow_redirects=False)
     assert response.status_code == 302
     state = parse_qs(urlsplit(response.headers["location"]).query)["state"][0]
     assert "HttpOnly" in response.headers["set-cookie"]
-    assert parse_qs(urlsplit(response.headers["location"]).query)["scope"] == ["openid email"]
+    query = parse_qs(urlsplit(response.headers["location"]).query)
+    assert query["scope"] == ["openid email"]
+    assert query["code_challenge_method"] == ["S256"] and len(query["code_challenge"][0]) == 43
+    assert query["nonce"]
     client.cookies.clear()
     mismatch = client.get("/auth/sso/google/callback", params={"code": "unused", "state": state})
     assert mismatch.status_code == 400
@@ -366,22 +374,33 @@ def test_duplicate_registration_commit_rolls_back(db):
     assert db.query(UserModel).count() == 1
 
 
-def test_provider_verified_email_can_still_link_existing_user(db, make_user, monkeypatch):
+def test_verified_provider_email_does_not_take_over_unverified_local_account(db, make_user, monkeypatch):
+    # Pre-account takeover (F1): an attacker registers the victim's email with
+    # their own password; the victim's later SSO sign-in must not be merged in.
     existing = make_user(email_verified=False)
+    monkeypatch.setattr(sso_service, "_create_oauth_account", lambda *a: pytest.fail("Must not link an unverified local account"))
+    monkeypatch.setattr(sso_service, "_issue_tokens", lambda *a: pytest.fail("Must not sign in to an unverified local account"))
+    with pytest.raises(HTTPException) as error:
+        sso_service._handle_login_or_register(db, SimpleNamespace(name="google"), {"provider_user_id": "verified-id", "email": existing.email, "email_verified": True}, None)
+    assert error.value.status_code == 409
+    db.refresh(existing)
+    assert existing.email_verified is False
+
+
+def test_verified_provider_email_links_verified_local_account(db, make_user, monkeypatch):
+    existing = make_user(email_verified=True)
     linked = []
     monkeypatch.setattr(sso_service, "_create_oauth_account", lambda *args: linked.append(args))
     monkeypatch.setattr(sso_service, "_issue_tokens", lambda *args: {"access_token": "test"})
-    result = sso_service._handle_login_or_register(db, SimpleNamespace(name="google"), {"provider_user_id": "verified-id", "email": existing.email, "email_verified": True}, "token", None, None, {}, None)
+    result = sso_service._handle_login_or_register(db, SimpleNamespace(name="google"), {"provider_user_id": "verified-id", "email": existing.email, "email_verified": True}, None)
     assert result == {"access_token": "test"}
     assert len(linked) == 1
-    db.refresh(existing)
-    assert existing.email_verified is True
 
 
 def test_email_change_does_not_inherit_verification(client, make_user, login, db):
     user = make_user(email_verified=True, email_verified_at=datetime.utcnow())
     tokens = login(user)
-    response = client.put(f"/users/{user.id}", headers=bearer(tokens), json={"email": "new-unverified@example.com"})
+    response = client.put(f"/users/{user.id}", headers=bearer(tokens), json={"email": "new-unverified@example.com", "current_password": "ValidPassword123!"})
     assert response.status_code == 200, response.text
     assert response.json()["email_verified"] is False
     refreshed = client.post("/refresh_token", headers={"Authorization": f"Bearer {tokens['refresh_token']}"})
@@ -391,12 +410,14 @@ def test_email_change_does_not_inherit_verification(client, make_user, login, db
     assert claims["email_verified"] is False
 
 
-def test_password_change_revokes_existing_sessions(client, make_user, login):
+def test_password_change_revokes_other_sessions(client, make_user, login):
     user = make_user()
     first, second = login(user), login(user)
-    response = client.put(f"/users/{user.id}", headers=bearer(first), json={"password": "ChangedPassword123!"})
+    assert client.put(f"/users/{user.id}", headers=bearer(first), json={"password": "ChangedPassword123!"}).status_code == 400
+    response = client.post("/users/me/password", headers=bearer(first), json={"current_password": "ValidPassword123!", "new_password": "ChangedPassword123!"})
     assert response.status_code == 200, response.text
-    for tokens in (first, second):
-        assert client.get("/users/me/", headers=bearer(tokens)).status_code == 401
-        assert client.post("/refresh_token", headers={"Authorization": f"Bearer {tokens['refresh_token']}"}).status_code == 401
+    # The session that made the change stays signed in; every other one is revoked.
+    assert client.get("/users/me/", headers=bearer(first)).status_code == 200
+    assert client.get("/users/me/", headers=bearer(second)).status_code == 401
+    assert client.post("/refresh_token", headers={"Authorization": f"Bearer {second['refresh_token']}"}).status_code == 401
     assert client.post("/token", data={"username": user.username, "password": "ChangedPassword123!"}).status_code == 200

@@ -15,7 +15,8 @@
 </template>
 
 <script>
-import { mapActions } from 'vuex';
+import api from '@/api';
+import { SSO_ERRORS } from '@/utils/messages';
 
 export default {
   name: 'SSOCallbackView',
@@ -23,29 +24,33 @@ export default {
     return { loading: true, error: '' };
   },
   async created() {
-    // SSO callback returns tokens as query params or JSON
-    // The backend callback endpoint returns JSON directly
-    // In a real flow, the backend would redirect to this page with tokens in the URL hash or query
-    const params = new URLSearchParams(window.location.search);
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
+    // The API redirects here with a one-time code (or an error code) in the URL
+    // fragment, which browsers never send to servers. Remove it from the
+    // address bar and history straight away.
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    window.history.replaceState(window.history.state, '', window.location.pathname);
 
-    if (accessToken) {
-      try {
-        this.handleSSOTokens({ access_token: accessToken, refresh_token: refreshToken });
-        await this.fetchProfile();
-        const hasProfile = this.$store.getters.hasProfile;
-        this.$router.push(hasProfile ? '/profile' : '/profile/create');
-      } catch (e) {
-        this.error = e.message;
-      }
-    } else {
-      this.error = 'No authentication tokens received.';
+    const errorCode = params.get('error');
+    const code = params.get('code');
+    if (errorCode || !code) {
+      this.error = SSO_ERRORS[errorCode] || SSO_ERRORS.sso_failed;
+      this.loading = false;
+      return;
     }
-    this.loading = false;
-  },
-  methods: {
-    ...mapActions(['handleSSOTokens', 'fetchProfile']),
+    try {
+      // Only redeemable in the browser that went through the provider.
+      const tokens = await api.ssoExchange(code);
+      await this.$store.dispatch('completeLogin', tokens);
+      const linked = params.get('linked');
+      if (linked) {
+        this.$router.replace({ path: '/profile', query: { linked } });
+      } else {
+        this.$router.replace(this.$store.getters.hasProfile ? '/profile' : '/profile/create');
+      }
+    } catch (e) {
+      this.error = e.status === 400 ? SSO_ERRORS.invalid_request : e.message;
+      this.loading = false;
+    }
   },
 };
 </script>

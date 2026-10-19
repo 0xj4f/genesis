@@ -280,11 +280,15 @@ curl -X DELETE http://localhost:8001/auth/sessions \
 
 ```
 Register (/users/)
-  -> bcrypt hash password
+  -> Argon2id hash via pwdlib (fresh random salt per hash)
+  -> (EMAIL_VERIFY=true only) email a single-use verification link
   -> insert user row (auth_provider=native, is_native=true)
 
 Login (/token)
-  -> verify password with bcrypt
+  -> per-account throttle check (5 failures / 15 min -> 429 with backoff)
+  -> verify password (Argon2id; legacy bcrypt hashes verify and are upgraded to Argon2id)
+  -> unknown usernames still run a dummy hash, so timing does not reveal accounts
+  -> (EMAIL_VERIFY=true only) reject unverified email with 403
   -> generate refresh JTI (UUID)
   -> create session row (bound to refresh JTI)
   -> sign access token (RS256, kid in header, sub=user_id, sid=session_id)

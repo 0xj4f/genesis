@@ -42,7 +42,7 @@ Your App                         Genesis
 ```
 
 Use any JWT library that supports JWKS:
-- **Python:** `python-jose`, `PyJWT`
+- **Python:** `PyJWT` (with `PyJWKClient`), `Authlib`
 - **Node.js:** `jose`, `jsonwebtoken`
 - **Go:** `go-jose`
 
@@ -128,7 +128,9 @@ http://localhost:8001/oauth/authorize
   &nonce=<random_string>
 ```
 
-The user must be authenticated (send their Genesis access token as Bearer). Genesis auto-approves consent for first-party clients and redirects back with an authorization code.
+The user must be authenticated (send their Genesis access token as Bearer). Only clients marked `is_first_party` are approved without asking; other clients get `403 consent_required` here. When `FRONTEND_URL` is set, discovery advertises the web app's `/oauth/authorize` page, which signs the user in, shows a consent screen, and calls `POST /oauth/authorize` (Bearer, JSON body with the same parameters plus `consent: approve|deny`). That returns `{redirect_to}` with the code (or `error=access_denied`) for the client's registered redirect URI.
+
+**Refresh tokens** are issued only when `offline_access` is requested *and* the client's grant types include `refresh_token`. They carry a `client_id` claim and can only be redeemed at `/oauth/token` by that client (with its secret when confidential); `/refresh_token` rejects them.
 
 ### Step 3: Exchange Code for Tokens
 

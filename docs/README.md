@@ -6,7 +6,7 @@ Genesis is a production-grade IAM microservice built with FastAPI. It provides a
 
 | Feature | Description |
 |---------|-------------|
-| **Native Auth** | Username/password registration and login with bcrypt hashing |
+| **Native Auth** | Username/password registration and login with Argon2id hashing (pwdlib), per-account lockout, optional email verification |
 | **RS256 JWT** | Asymmetric token signing with key rotation support |
 | **JWKS Endpoint** | `/.well-known/jwks.json` for downstream token verification |
 | **Token Refresh** | Rotation with replay detection (revokes session on reuse) |
@@ -48,8 +48,11 @@ MySQL 8.0 (7 tables: users, profiles, sessions, oauth_accounts, oauth_clients, a
 | Framework | FastAPI |
 | Database | MySQL 8.0 + SQLAlchemy |
 | Migrations | Alembic |
-| JWT | python-jose (RS256/HS256) |
-| Password Hashing | bcrypt |
+| JWT | PyJWT (RS256; HS256 only for explicit local development) |
+| Password Hashing | Argon2id via pwdlib (legacy bcrypt hashes upgraded on login) |
+| SSO client | Authlib (PKCE, nonce) |
+
+Library choices and their reasons: [backend.md](../backend.md), [frontend.md](../frontend.md).
 | Image Processing | Pillow |
 | HTTP Client | httpx (SSO provider calls) |
 | Containerization | Docker + Docker Compose |
@@ -81,6 +84,7 @@ curl -X POST http://localhost:8001/token \
 |-------|-------------|
 | [Getting Started](getting-started.md) | Docker setup, environment variables, local development |
 | [Native Auth Guide](native-auth-guide.md) | End-to-end: register, login, profile, sessions, refresh |
+| [Authentication & Authorization](auth.md) | Mental model, data flow diagrams, roles and policy, JWT claims, scope and audience |
 | [API Reference](api-reference.md) | All 33+ endpoints with curl examples |
 | [OIDC Integration](oidc-guide.md) | How downstream apps authenticate via Genesis |
 | [SSO Setup](sso/README.md) | Overview of Social Sign-On |
@@ -117,7 +121,7 @@ DELETE /profile/me/picture             Delete avatar
 GET    /auth/sso/providers             List configured SSO providers
 GET    /auth/sso/{provider}/authorize  Start SSO login
 GET    /auth/sso/{provider}/callback   SSO callback (returns tokens)
-GET    /auth/sso/{provider}/link       Link SSO to existing account
+POST   /auth/sso/{provider}/link       Start linking SSO to the signed-in account
 DELETE /auth/sso/{provider}/unlink     Unlink SSO provider
 GET    /auth/sso/linked                List linked providers
 

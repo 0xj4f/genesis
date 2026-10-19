@@ -5,6 +5,8 @@
       <p class="text-muted text-sm">system overview // user management</p>
     </div>
 
+    <div v-if="error" class="alert alert-error mt-md">{{ error }}</div>
+
     <!-- Analytics -->
     <AnalyticsCards :analytics="analytics" />
 
@@ -88,10 +90,8 @@ export default {
       loadingUsers: false,
       selectedUserId: null,
       searchTimer: null,
+      error: '',
     };
-  },
-  computed: {
-    token() { return this.$store.state.adminToken; },
   },
   async created() {
     await Promise.all([this.loadAnalytics(), this.loadUsers()]);
@@ -99,17 +99,17 @@ export default {
   methods: {
     async loadAnalytics() {
       try {
-        this.analytics = await api.getAnalytics(this.token);
-      } catch { /* ignore */ }
+        this.analytics = await api.getAnalytics();
+      } catch (e) { this.error = e.message; }
     },
     async loadUsers() {
       this.loadingUsers = true;
       try {
-        const data = await api.getAdminUsers(this.token, this.page, 20, this.search);
+        const data = await api.getAdminUsers(this.page, 20, this.search);
         this.users = data.users;
         this.total = data.total;
         this.totalPages = data.total_pages;
-      } catch { /* ignore */ }
+      } catch (e) { this.error = e.message; }
       finally { this.loadingUsers = false; }
     },
     debounceSearch() {

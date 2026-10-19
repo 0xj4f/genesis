@@ -119,20 +119,27 @@ List all users.
 ### GET /users/{user_id}
 Get a user by UUID.
 
-- **Auth:** No
+- **Auth:** Yes (the user themself, or admin/root)
 - **Response:** User object
 
 ### PUT /users/{user_id}
-Update a user's username, email, or password.
+Update a user's username or email. Passwords are not accepted here (400).
 
-- **Auth:** No
-- **Body:** `{ username?, email?, password? }`
-- **Response:** Updated User object
+- **Auth:** Yes. Self, or an administrator allowed to manage the target (admins manage regular users; only ROOT manages admins).
+- **Body:** `{ username?, email?, current_password? }`. `current_password` is required when changing your own email.
+- **Response:** Updated User object with `email_change_pending: true` when `EMAIL_VERIFY` holds the change until the new address is confirmed.
+
+### POST /users/me/password
+Change your own password. Other sessions are signed out; the current one stays.
+
+- **Auth:** Yes
+- **Body:** `{ current_password, new_password }` (`current_password` may be omitted only by SSO-only accounts that signed in within the last 10 minutes)
+- **Response:** `{ message }`
 
 ### DELETE /users/{user_id}
 Delete a user.
 
-- **Auth:** No
+- **Auth:** Yes (self, or an administrator allowed to manage the target; ROOT cannot be deleted)
 - **Response:** `{ message }`
 
 ### POST /users/search
@@ -239,22 +246,29 @@ http://localhost:8001/auth/sso/google/authorize
 ```
 
 ### GET /auth/sso/{provider}/callback
-Handle the OAuth callback from the provider. Returns JWT tokens.
+Handle the OAuth callback from the provider.
 
-- **Auth:** No
-- **Query:** `code`, `state` (set by the provider)
-- **Response:** `{ access_token, refresh_token, token_type }`
+- **Auth:** No (bound to the browser by the `genesis_sso_state` cookie)
+- **Query:** `code`, `state` (or `error`) set by the provider
+- **Response:** with `FRONTEND_URL` set, a 302 to `{FRONTEND_URL}/sso/callback#code=...` (or `#error=<code>`); otherwise `{ access_token, refresh_token, token_type }`
 
 This endpoint handles three scenarios:
 1. **Returning SSO user** - finds existing linked account, issues tokens
-2. **Email matches verified native account** - auto-links the SSO provider
+2. **Email matches an account** - auto-links only if the account's email is verified in Genesis *and* by the provider; otherwise 409 (sign in, then link)
 3. **New user** - creates account (no password, `is_native=false`), profile, and issues tokens
 
-### GET /auth/sso/{provider}/link
-Link an SSO provider to the authenticated user's existing account.
+### POST /auth/sso/exchange
+Trade the one-time hand-off code for tokens (single use, two minutes, same browser only).
 
-- **Auth:** Yes
-- **Response:** HTTP 302 redirect to provider
+- **Auth:** No (send with credentials so the `genesis_sso_handoff` cookie is included)
+- **Body:** `{ code }`
+- **Response:** `{ access_token, refresh_token, token_type }`
+
+### POST /auth/sso/{provider}/link
+Start linking an SSO provider to the authenticated user's account.
+
+- **Auth:** Yes (send with credentials so the state cookie is stored)
+- **Response:** `{ authorization_url }` for the browser to visit
 
 ### DELETE /auth/sso/{provider}/unlink
 Unlink an SSO provider. Fails if it's the user's only authentication method (no password set).
@@ -366,3 +380,20 @@ Generate a new client secret. The old secret is immediately invalidated.
 
 - **Auth:** Yes
 - **Response:** `{ client_id, client_name, client_secret, message }`
+
+
+---
+
+## Added in the 2026-10 auth hardening
+
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `GET /auth/config` | No | `{ email_verification, sso_providers }` for the web app |
+| `POST /auth/email/verify` | No | `{ token }` from the email link; single use, expires |
+| `POST /auth/email/resend` | No | `{ email }`; always `202` so accounts are not revealed |
+| `POST /admin/users/{id}/password` | Admin | `{ new_password }`; admins for regular users, ROOT for admins; revokes the user's sessions |
+| `POST /oauth/authorize` | Yes | Consent decision from the web app; returns `{ redirect_to }` |
+| `GET /oauth/clients/{id}/public` | No | Client name and scopes for the consent screen |
+
+Login endpoints (`/token`, `/admin/login`) can now return `429` (account temporarily locked after repeated
+failures) and, with `EMAIL_VERIFY=true`, `403 Email address not verified`.

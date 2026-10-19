@@ -26,6 +26,8 @@ class OAuthClientCreate(BaseModel):
     allowed_audiences: list[ClientText] = Field(max_length=50)
     grant_types: list[GrantType] = Field(default=["authorization_code", "client_credentials"], min_length=1, max_length=3)
     is_confidential: bool = True
+    # Skip the consent screen. Only for clients operated by the Genesis owner.
+    is_first_party: bool = False
 
 
 class OAuthClientResponse(BaseModel):
@@ -37,6 +39,7 @@ class OAuthClientResponse(BaseModel):
     grant_types: list[str]
     is_active: bool
     is_confidential: bool
+    is_first_party: bool = False
     created_at: Optional[datetime] = None
 
     class Config:
@@ -54,3 +57,4 @@ class OAuthClientUpdate(BaseModel):
     allowed_audiences: Optional[list[ClientText]] = Field(None, max_length=50)
     grant_types: Optional[list[GrantType]] = Field(None, min_length=1, max_length=3)
     is_active: Optional[bool] = None
+    is_first_party: Optional[bool] = None

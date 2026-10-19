@@ -41,7 +41,9 @@ def test_request_email_validation_is_still_enforced():
     for model, payload in [
         (UserCreate, {"username": "test", "email": "adam@genesis.local", "password": "ValidPassword123!"}),
         (UserUpdate, {"email": "adam@genesis.local"}),
-        (ProfileCreate, {"given_name": "Test", "family_name": "User", "sub": "test", "email": "not-an-email"}),
     ]:
         with pytest.raises(ValidationError):
             model(**payload)
+    # Profile identity fields are server-controlled; client values are ignored.
+    profile = ProfileCreate(given_name="Test", family_name="User", sub="spoofed", email="not-an-email")
+    assert "sub" not in profile.model_dump() and "email" not in profile.model_dump()

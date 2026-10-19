@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database.session import get_db
-from app.auth.auth import require_admin, require_root
+from app.auth.auth import require_admin
+from app.auth.policy import ensure_can_manage
 from app.database.oauth_client_db_interface import (
     create_oauth_client_db, get_oauth_client_by_id_db,
     get_oauth_client_by_name_db, get_all_oauth_clients_db, update_oauth_client_db,
@@ -19,12 +20,12 @@ from app.models.oauth_client_api_model import (
 from app.models.admin_api_model import (
     AnalyticsResponse, AdminUserListResponse, AdminUserDetail, RoleUpdateRequest,
 )
-from app.models.user_api_model import Token
+from app.models.user_api_model import Token, AdminPasswordReset
 from app.services.admin_service import (
     admin_login_service, get_analytics, get_users_paginated,
-    get_user_detail, update_user_role, toggle_user_status,
+    get_user_detail, update_user_role, toggle_user_status, reset_user_password,
 )
-from app.utils.security import hash_password
+from app.utils.security import hash_client_secret
 
 router = APIRouter()
 
@@ -73,12 +74,22 @@ def change_role(
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return update_user_role(db, user_id, body.role, current_user.role)
+    return update_user_role(db, user_id, body.role, current_user)
 
 
 @router.post("/admin/users/{user_id}/disable", tags=["admin"])
 def disable_user(user_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
-    return toggle_user_status(db, user_id)
+    return toggle_user_status(db, user_id, current_user)
+
+
+@router.post("/admin/users/{user_id}/password", tags=["admin"])
+def admin_reset_password(
+    user_id: str,
+    body: AdminPasswordReset,
+    current_user=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return reset_user_password(db, user_id, body.new_password.get_secret_value(), current_user)
 
 
 @router.delete("/admin/users/{user_id}", tags=["admin"])
@@ -88,6 +99,7 @@ def delete_user(user_id: str, current_user=Depends(require_admin), db: Session =
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":
         raise HTTPException(status_code=403, detail="Cannot delete ROOT user")
+    ensure_can_manage(current_user, user, "delete_user")
     delete_user_by_id_db(db, user_id)
     return {"message": "User deleted"}
 
@@ -101,7 +113,7 @@ def create_client(client_data: OAuthClientCreate, db: Session = Depends(get_db),
         raise HTTPException(status_code=409, detail=f"Client '{client_data.client_name}' already exists")
     client_secret = secrets.token_urlsafe(32)
     client = create_oauth_client_db(db, {
-        "client_secret_hash": hash_password(client_secret),
+        "client_secret_hash": hash_client_secret(client_secret),
         "client_name": client_data.client_name,
         "redirect_uris": client_data.redirect_uris,
         "allowed_scopes": client_data.allowed_scopes,
@@ -109,12 +121,14 @@ def create_client(client_data: OAuthClientCreate, db: Session = Depends(get_db),
         "grant_types": client_data.grant_types,
         "is_active": True,
         "is_confidential": client_data.is_confidential,
+        "is_first_party": client_data.is_first_party,
     })
     return OAuthClientWithSecret(
         id=client.id, client_name=client.client_name, client_secret=client_secret,
         redirect_uris=client.redirect_uris, allowed_scopes=client.allowed_scopes,
         allowed_audiences=client.allowed_audiences, grant_types=client.grant_types,
-        is_active=client.is_active, is_confidential=client.is_confidential, created_at=client.created_at,
+        is_active=client.is_active, is_confidential=client.is_confidential,
+        is_first_party=client.is_first_party, created_at=client.created_at,
     )
 
 
@@ -142,7 +156,7 @@ def update_client(client_id: str, update_data: OAuthClientUpdate, db: Session = 
 @router.post("/admin/clients/{client_id}/rotate-secret", tags=["admin"])
 def rotate_secret(client_id: str, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     new_secret = secrets.token_urlsafe(32)
-    client = update_oauth_client_db(db, client_id, {"client_secret_hash": hash_password(new_secret)})
+    client = update_oauth_client_db(db, client_id, {"client_secret_hash": hash_client_secret(new_secret)})
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     return {"client_id": client.id, "client_name": client.client_name, "client_secret": new_secret, "message": "Secret rotated."}

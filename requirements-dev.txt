@@ -1,0 +1,5 @@
+# Test-only dependencies (not installed in the runtime image)
+-r requirements.txt
+pytest>=8.0.0
+requests>=2.31.0
+faker>=25.0.0

@@ -1,15 +1,21 @@
 import { createStore } from 'vuex';
 import router from '@/router';
-import api from '@/api';
+import api, { setAuthHandler } from '@/api';
+import { isExpired } from '@/utils/jwt';
 
-export default createStore({
+// Tokens live in memory only (never localStorage), which keeps them away from
+// other scripts on the origin but means a page reload signs the user out.
+const store = createStore({
   state: {
     user: null,
     profile: null,
     accessToken: null,
     refreshToken: null,
     ssoProviders: [],
+    authConfig: { email_verification: false },
     adminToken: null,
+    adminRefreshToken: null,
+    adminUser: null,
   },
 
   mutations: {
@@ -20,67 +26,89 @@ export default createStore({
       state.refreshToken = refreshToken || state.refreshToken;
     },
     setSSOProviders(state, providers) { state.ssoProviders = providers; },
-    setAdminToken(state, token) { state.adminToken = token; },
+    setAuthConfig(state, config) { state.authConfig = config; },
+    setAdminTokens(state, { accessToken, refreshToken }) {
+      state.adminToken = accessToken;
+      state.adminRefreshToken = refreshToken || state.adminRefreshToken;
+    },
+    setAdminUser(state, user) { state.adminUser = user; },
     clearAuth(state) {
       state.user = null;
       state.profile = null;
       state.accessToken = null;
       state.refreshToken = null;
     },
-    clearAdminAuth(state) { state.adminToken = null; },
+    clearAdminAuth(state) {
+      state.adminToken = null;
+      state.adminRefreshToken = null;
+      state.adminUser = null;
+    },
   },
 
   actions: {
-    async login({ commit, dispatch }, { username, password }) {
+    async login({ dispatch }, { username, password }) {
       const data = await api.login(username, password);
-      commit('setTokens', { accessToken: data.access_token, refreshToken: data.refresh_token });
-      await dispatch('fetchMe');
-      await dispatch('fetchProfile');
+      await dispatch('completeLogin', data);
     },
 
-    handleSSOTokens({ commit, dispatch }, { access_token, refresh_token }) {
+    // Shared by password login and the SSO hand-off.
+    async completeLogin({ commit, dispatch }, { access_token, refresh_token }) {
       commit('setTokens', { accessToken: access_token, refreshToken: refresh_token });
-      dispatch('fetchMe');
-      dispatch('fetchProfile');
+      await Promise.all([dispatch('fetchMe'), dispatch('fetchProfile')]);
+    },
+
+    // Returns the new access token, or null after signing the session out.
+    async refreshSession({ state, commit }, kind) {
+      const admin = kind === 'admin';
+      const refreshToken = admin ? state.adminRefreshToken : state.refreshToken;
+      if (refreshToken) {
+        try {
+          const data = await api.refresh(refreshToken);
+          const tokens = { accessToken: data.access_token, refreshToken: data.refresh_token };
+          commit(admin ? 'setAdminTokens' : 'setTokens', tokens);
+          return data.access_token;
+        } catch {
+          /* fall through: the session is gone */
+        }
+      }
+      commit(admin ? 'clearAdminAuth' : 'clearAuth');
+      router.push(admin ? '/admin/login' : '/login');
+      return null;
     },
 
     async fetchMe({ commit, state }) {
       if (!state.accessToken) return;
       try {
-        const user = await api.getMe(state.accessToken);
-        commit('setUser', user);
+        commit('setUser', await api.getMe());
       } catch {
-        /* token may be expired */
+        /* signed out or unavailable */
       }
     },
 
     async fetchProfile({ commit, state }) {
       if (!state.accessToken) return;
       try {
-        const profile = await api.getProfile(state.accessToken);
-        commit('setProfile', profile);
+        commit('setProfile', await api.getProfile());
       } catch {
         commit('setProfile', null);
       }
     },
 
-    async createProfile({ commit, state }, data) {
-      const profile = await api.createProfile(state.accessToken, data);
+    async createProfile({ commit }, data) {
+      const profile = await api.createProfile(data);
       commit('setProfile', profile);
       return profile;
     },
 
-    async updateProfile({ commit, state }, data) {
-      const profile = await api.updateProfile(state.accessToken, data);
+    async updateProfile({ commit }, data) {
+      const profile = await api.updateProfile(data);
       commit('setProfile', profile);
       return profile;
     },
 
-    async uploadPicture({ commit, state }, file) {
-      const result = await api.uploadPicture(state.accessToken, file);
-      // Refresh profile to get updated picture URL
-      const profile = await api.getProfile(state.accessToken);
-      commit('setProfile', profile);
+    async uploadPicture({ commit }, file) {
+      const result = await api.uploadPicture(file);
+      commit('setProfile', await api.getProfile());
       return result;
     },
 
@@ -93,28 +121,50 @@ export default createStore({
       }
     },
 
-    async adminLogin({ commit }, { username, password }) {
-      const data = await api.adminLogin(username, password);
-      commit('setAdminToken', data.access_token);
+    async fetchAuthConfig({ commit }) {
+      try {
+        commit('setAuthConfig', await api.getAuthConfig());
+      } catch {
+        /* keep defaults */
+      }
     },
 
-    adminLogout({ commit }) {
+    async adminLogin({ commit }, { username, password }) {
+      const data = await api.adminLogin(username, password);
+      commit('setAdminTokens', { accessToken: data.access_token, refreshToken: data.refresh_token });
+      try {
+        commit('setAdminUser', await api.getAdminMe());
+      } catch {
+        /* role-dependent controls stay hidden */
+      }
+    },
+
+    // Logout ends the session on the server too, so its refresh token stops working.
+    async adminLogout({ commit, state }) {
+      if (state.adminToken) {
+        try { await api.endSession('admin'); } catch { /* already gone */ }
+      }
       commit('clearAdminAuth');
       router.push('/admin/login');
     },
 
-    logout({ commit }) {
+    async logout({ commit, state }) {
+      if (state.accessToken) {
+        try { await api.endSession('user'); } catch { /* already gone */ }
+      }
       commit('clearAuth');
       router.push('/login');
     },
   },
 
   getters: {
-    isAuthenticated: state => !!state.accessToken,
+    // An expired access token still counts while a refresh token can renew it.
+    isAuthenticated: state => !!state.accessToken && (!!state.refreshToken || !isExpired(state.accessToken)),
+    isAdminAuthenticated: state => !!state.adminToken && (!!state.adminRefreshToken || !isExpired(state.adminToken)),
+    isRootAdmin: state => state.adminUser?.role === 'root',
     userProfile: state => state.profile,
     hasProfile: state => !!state.profile,
     currentUser: state => state.user,
-    isAdminAuthenticated: state => !!state.adminToken,
     initials: state => {
       if (state.profile) {
         const g = state.profile.given_name?.[0] || '';
@@ -126,3 +176,17 @@ export default createStore({
     },
   },
 });
+
+// One refresh at a time per session; concurrent 401s wait for the same result.
+const refreshing = {};
+setAuthHandler({
+  token: kind => (kind === 'admin' ? store.state.adminToken : store.state.accessToken),
+  refresh(kind) {
+    if (!refreshing[kind]) {
+      refreshing[kind] = store.dispatch('refreshSession', kind).finally(() => { refreshing[kind] = null; });
+    }
+    return refreshing[kind];
+  },
+});
+
+export default store;

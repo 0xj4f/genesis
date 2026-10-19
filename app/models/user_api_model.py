@@ -6,10 +6,16 @@ from uuid import UUID
 from datetime import datetime
 
 
+PASSWORD_MIN_LENGTH = 12
+# Argon2id has no input-length limit (bcrypt's was 72 bytes); this cap only
+# bounds the work an attacker can request per hash.
+PASSWORD_MAX_LENGTH = 128
+
+
 def validate_password_strength(password_str: str) -> str:
-    if len(password_str.encode("utf-8")) > 72:
-        raise ValueError("Password must be at most 72 UTF-8 bytes")
-    if len(password_str) < 12:
+    if len(password_str) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password must be at most {PASSWORD_MAX_LENGTH} characters long")
+    if len(password_str) < PASSWORD_MIN_LENGTH:
         raise ValueError("Password must be at least 12 characters long")
     if not re.search(r"[a-z]", password_str):
         raise ValueError("Password must contain at least one lowercase letter")
@@ -66,6 +72,12 @@ class UserCreate(BaseModel):
         return password
 
 
+def _validated_secret(password):
+    password_str = password.get_secret_value() if isinstance(password, SecretStr) else str(password)
+    validate_password_strength(password_str)
+    return password
+
+
 class User(BaseModel):
     id: UUID
     username: str
@@ -82,6 +94,8 @@ class User(BaseModel):
     role: Optional[str] = "user"
     created_at: Optional[datetime] = None
     last_modified: Optional[datetime] = None
+    # True when an email change waits for the new address to be verified.
+    email_change_pending: bool = False
 
     class Config:
         from_attributes = True
@@ -90,19 +104,39 @@ class User(BaseModel):
 class UserUpdate(BaseModel):
     username: Optional[Username] = None
     email: Optional[EmailStr] = Field(None, max_length=255)
+    # Required when changing your own email (re-authentication).
+    current_password: Optional[SecretStr] = None
+    # No longer accepted here; the route rejects it with a pointer to
+    # POST /users/me/password, which requires the current password.
     password: Optional[SecretStr] = None
 
-    @field_validator("password", mode="before")
+
+class PasswordChangeRequest(BaseModel):
+    # Optional only for SSO-only accounts setting their first password.
+    current_password: Optional[SecretStr] = None
+    new_password: SecretStr
+
+    @field_validator("new_password", mode="before")
     @classmethod
-    def validate_password(cls, password):
-        if password is None:
-            return password
-        if isinstance(password, SecretStr):
-            password_str = password.get_secret_value()
-        else:
-            password_str = str(password)
-        validate_password_strength(password_str)
-        return password
+    def validate_new_password(cls, password):
+        return _validated_secret(password)
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: SecretStr
+
+    @field_validator("new_password", mode="before")
+    @classmethod
+    def validate_new_password(cls, password):
+        return _validated_secret(password)
+
+
+class EmailVerifyRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+
+
+class EmailResendRequest(BaseModel):
+    email: EmailStr = Field(max_length=255)
 
 
 class UserSearchRequest(BaseModel):

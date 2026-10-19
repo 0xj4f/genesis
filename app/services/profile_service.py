@@ -11,14 +11,15 @@ from sqlalchemy.orm import Session
 from app.models.user_db_model import User
 from app.models.profile_db_model import Profile
 
-def create_profile_service(db: Session, profile_create: ProfileCreate):
-    profile_create.user_id = str(profile_create.user_id)
-    db.query(User).filter(User.id == profile_create.user_id).with_for_update().first()
-    existing_profile = db.query(Profile).filter(Profile.user_id == profile_create.user_id).with_for_update().first()
+def create_profile_service(db: Session, user, profile_create: ProfileCreate):
+    user_id = str(user.id)
+    db.query(User).filter(User.id == user_id).with_for_update().first()
+    existing_profile = db.query(Profile).filter(Profile.user_id == user_id).with_for_update().first()
     if existing_profile:
         raise HTTPException(status_code=400, detail="Profile already exists for this user")
 
-    return create_profile_db(db, profile_create)
+    # Identity fields come from the authenticated user, never from the request.
+    return create_profile_db(db, {**profile_create.model_dump(), "user_id": user_id, "email": user.email, "sub": user_id})
 
 def get_profile_by_user_service(db: Session, user_id: str):
     profile = get_profile_by_user_db(db, user_id)

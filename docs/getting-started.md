@@ -107,7 +107,7 @@ See [SSO Setup Guides](sso/README.md) for how to obtain these credentials.
 # Python 3.13+
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.lock
 
 # MySQL must be running locally
 # Create database: CREATE DATABASE genesis;

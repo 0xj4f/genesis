@@ -1,6 +1,13 @@
 """Isolated security tests; no running application or production database needed."""
 
+import os
+import secrets
 from uuid import uuid4
+
+# Without RSA key files (e.g. in CI) the app needs an explicit development
+# signing secret; there is no committed default any more. Must run before
+# app.config is imported. A local .env with RSA keys still takes precedence.
+os.environ.setdefault("OAUTH_SECRET_KEY", secrets.token_urlsafe(48))
 
 import bcrypt
 import pytest

@@ -74,9 +74,11 @@ Your admin panels and internal dashboards redirect to Genesis via OIDC. Single s
 |-------|-----------|
 | API | FastAPI (Python) |
 | Database | MySQL 8.0 + SQLAlchemy + Alembic |
-| Auth | RS256 JWT (python-jose), bcrypt, OAuth2, OIDC |
+| Auth | RS256 JWT (PyJWT), Argon2id via pwdlib (legacy bcrypt verified), Authlib (upstream SSO), OAuth2, OIDC |
 | Frontend | Vue 3 + Vuex + Vue Router |
 | Containerization | Docker + Docker Compose + Nginx |
+
+Why each library is used: [backend.md](backend.md) (API) and [frontend.md](frontend.md) (web app).
 
 ---
 

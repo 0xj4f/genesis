@@ -6,7 +6,9 @@ import jwt
 from jwt import InvalidTokenError
 from app.database.user_db_interface import get_user_by_username_db, get_user_by_id_db
 from app.models.user_api_model import User, TokenData, UserMinimal
-from app.utils.security import verify_password
+from app.utils.security import verify_and_update_password, verify_dummy_password
+from app.utils.audit import security_event, subject_hash
+from app.auth.throttle import login_key, ensure_attempt_allowed, record_failure, record_success
 from app.database.session import get_db
 from app.config import get_settings
 from app.auth.keys import get_signing_key, get_verification_key_by_kid
@@ -18,10 +20,51 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def authenticate_user(db: Session, username: str, password: str):
+    """Verify a username/password pair. Throttled per account; returns the user or False."""
+    key = login_key(username)
+    ensure_attempt_allowed(key)
     user = get_user_by_username_db(db, username)
-    if not user or not user.password or not verify_password(password, user.password):
+    if not user or not user.password:
+        # Same work as a real check so timing does not reveal unknown accounts.
+        verify_dummy_password(password)
+        valid = False
+    else:
+        valid, upgraded_hash = verify_and_update_password(password, user.password)
+        if valid and upgraded_hash:
+            # Outdated algorithm or parameters (e.g. bcrypt): store the new hash.
+            user.password = upgraded_hash
+            db.commit()
+            security_event("password_rehashed", user_id=str(user.id))
+    if not valid:
+        record_failure(key)
+        security_event("login_failed", subject=subject_hash(username))
         return False
+    record_success(key)
     return user
+
+
+def enforce_email_verified(user) -> None:
+    """With EMAIL_VERIFY enabled, password sign-in requires a verified email."""
+    if settings.EMAIL_VERIFY and not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email address not verified")
+
+
+def build_user_claims(user, *, sid: str, auth_method: str, scope: str = "openid profile email") -> dict:
+    """Claims shared by every user token, whichever way the user signed in.
+
+    `role` is read by relying parties (gen-commerce) that validate tokens offline;
+    it can be stale for up to the access-token lifetime after a role change.
+    """
+    return {
+        "sub": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "email_verified": user.email_verified,
+        "auth_method": auth_method,
+        "scope": scope,
+        "sid": sid,
+        "role": user.role,
+    }
 
 
 def create_token(data: dict, expires_delta: timedelta, token_type: str = "access") -> tuple[str, str]:
@@ -101,10 +144,8 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def oauth_authenticate_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-) -> User:
-    """Validate access token and return the authenticated user."""
+def _authenticate_access_token(token: str, db: Session):
+    """Validate an access token and its session. Returns (user, claims, session)."""
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
@@ -123,8 +164,21 @@ def oauth_authenticate_current_user(
         raise credentials_exception
     if user.disabled or not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
-    validate_access_session(db, payload)
-    return user
+    session = validate_access_session(db, payload)
+    return user, payload, session
+
+
+def oauth_authenticate_current_user(
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> User:
+    """Validate access token and return the authenticated user."""
+    return _authenticate_access_token(token, db)[0]
+
+
+def current_user_with_claims(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """Like oauth_authenticate_current_user, but also returns (claims, session)
+    for endpoints that need the session id or sign-in time."""
+    return _authenticate_access_token(token, db)
 
 
 def validate_access_session(db: Session, payload: dict):
@@ -139,6 +193,32 @@ def validate_access_session(db: Session, payload: dict):
     ).first()
     if not session:
         raise HTTPException(status_code=401, detail="Session expired or revoked")
+    return session
+
+
+def require_reauth(db: Session, user, session, current_password) -> None:
+    """Confirm the caller still controls the account before a sensitive change.
+
+    Accounts with a password must supply it (throttled like a login). SSO-only
+    accounts must have signed in within REAUTH_MAX_AGE_SECONDS instead.
+    """
+    if user.password:
+        if not current_password:
+            raise HTTPException(status_code=400, detail="current_password is required")
+        key = login_key(user.username)
+        ensure_attempt_allowed(key)
+        valid, upgraded_hash = verify_and_update_password(current_password.get_secret_value(), user.password)
+        if not valid:
+            record_failure(key)
+            security_event("reauth_failed", user_id=str(user.id))
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        record_success(key)
+        if upgraded_hash:
+            user.password = upgraded_hash
+        return
+    signed_in_at = session.created_at
+    if signed_in_at is None or datetime.utcnow() - signed_in_at > timedelta(seconds=settings.REAUTH_MAX_AGE_SECONDS):
+        raise HTTPException(status_code=403, detail="Please sign in again to make this change")
 
 
 def require_role(*allowed_roles):
@@ -146,11 +226,14 @@ def require_role(*allowed_roles):
 
     Usage: current_user=Depends(require_role("admin", "root"))
     """
-    async def _check(
+    # A plain def: FastAPI runs it in the threadpool, so the blocking database
+    # lookups do not stall the event loop.
+    def _check(
         token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
     ):
         user = oauth_authenticate_current_user(token, db)
         if user.role not in allowed_roles:
+            security_event("authz_denied", actor=str(user.id), role=user.role, action="role_required")
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     return _check

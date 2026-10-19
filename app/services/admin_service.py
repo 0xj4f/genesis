@@ -6,12 +6,19 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from uuid import uuid4
 
-from app.auth.auth import authenticate_user, create_access_token, create_refresh_token
+from app.auth.auth import (
+    authenticate_user, build_user_claims, create_access_token, create_refresh_token, enforce_email_verified,
+)
+from app.auth.policy import ROLES, can_assign_role, deny, ensure_can_manage
 from app.database.user_db_interface import (
     get_user_by_id_db,
     get_users_paginated_db,
     get_user_analytics_db,
+    set_user_password_db,
 )
+from app.database.session_db_interface import revoke_all_user_sessions_db
+from app.utils.audit import security_event
+from app.utils.security import hash_password
 from app.database.profile_db_interface import get_profile_by_user_db
 from app.database.oauth_account_db_interface import get_oauth_accounts_by_user_db
 from app.database.session_db_interface import get_active_sessions_by_user_db
@@ -27,20 +34,12 @@ def admin_login_service(db: Session, username: str, password: str, request: Requ
         raise HTTPException(status_code=403, detail="Account deactivated")
     if user.role not in ("admin", "root"):
         raise HTTPException(status_code=403, detail="Access denied. Admin credentials required.")
+    enforce_email_verified(user)
 
     refresh_jti = str(uuid4())
     session_id = create_session(db=db, user_id=str(user.id), refresh_jti=refresh_jti, request=request, login_method="password")
 
-    payload = {
-        "sub": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "email_verified": user.email_verified,
-        "auth_method": "password",
-        "scope": "openid profile email",
-        "sid": session_id,
-        "role": user.role,
-    }
+    payload = build_user_claims(user, sid=session_id, auth_method="password")
 
     access_token, _ = create_access_token(data=payload)
     refresh_token, _ = create_refresh_token(data={**payload, "jti_override": refresh_jti})
@@ -49,6 +48,7 @@ def admin_login_service(db: Session, username: str, password: str, request: Requ
     user.last_login_ip = request.client.host if request.client else None
     user.last_login_method = "password"
     db.commit()
+    security_event("login_succeeded", user_id=str(user.id), method="admin_password")
 
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
@@ -126,35 +126,58 @@ def get_user_detail(db: Session, user_id: str) -> dict:
     }
 
 
-def update_user_role(db: Session, user_id: str, new_role: str, current_user_role: str) -> dict:
-    if new_role not in ("user", "admin", "root"):
+def update_user_role(db: Session, user_id: str, new_role: str, actor) -> dict:
+    if new_role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role. Must be: user, admin, root")
-
-    # Only root can assign root
-    if new_role == "root" and current_user_role != "root":
-        raise HTTPException(status_code=403, detail="Only ROOT can assign ROOT role")
 
     user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if user.role == "root" and current_user_role != "root":
-        raise HTTPException(status_code=403, detail="Only ROOT can modify a ROOT user")
-    user.role = new_role
-    db.commit()
+    # Promoting to or demoting from admin/root is root-only; nobody changes their own role.
+    if not can_assign_role(actor, user, new_role):
+        deny(actor, "change_role", user_id)
+    if user.role != new_role:
+        old_role = user.role
+        user.role = new_role
+        db.commit()
+        # Tokens carry the role claim: sign the user out so new tokens show the new role.
+        revoke_all_user_sessions_db(db, user_id, reason="role_changed")
+        security_event("role_changed", actor=str(actor.id), target=user_id, old=old_role, new=new_role)
     return {"message": f"User role updated to {new_role}"}
 
 
-def toggle_user_status(db: Session, user_id: str) -> dict:
+def toggle_user_status(db: Session, user_id: str, actor) -> dict:
     from app.models.user_db_model import User
     user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":
         raise HTTPException(status_code=403, detail="Cannot disable ROOT user")
+    ensure_can_manage(actor, user, "toggle_user_status")
 
     user.disabled = not user.disabled
     user.is_active = not user.disabled
     db.commit()
+    if user.disabled:
+        revoke_all_user_sessions_db(db, user_id, reason="disabled")
     status = "disabled" if user.disabled else "enabled"
+    security_event("user_" + status, actor=str(actor.id), target=user_id)
     return {"message": f"User {status}", "disabled": user.disabled}
+
+
+def reset_user_password(db: Session, user_id: str, new_password: str, actor) -> dict:
+    """Administrator sets another user's password and signs them out everywhere."""
+    if str(actor.id) == user_id:
+        raise HTTPException(status_code=400, detail="Use POST /users/me/password to change your own password")
+    user = get_user_by_id_db(db, user_id, for_update=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    ensure_can_manage(actor, user, "reset_password")
+    try:
+        password_hash = hash_password(new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    set_user_password_db(db, user, password_hash, reason="admin_password_reset")
+    security_event("password_reset_by_admin", actor=str(actor.id), target=user_id)
+    return {"message": "Password reset. The user was signed out of all sessions."}

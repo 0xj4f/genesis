@@ -17,6 +17,8 @@ class OAuthClient(Base):
     grant_types = Column(JSON, nullable=False, default=lambda: ["authorization_code", "client_credentials"])
     is_active = Column(Boolean, nullable=False, default=True)
     is_confidential = Column(Boolean, nullable=False, default=True)
+    # First-party clients are approved without a consent screen.
+    is_first_party = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

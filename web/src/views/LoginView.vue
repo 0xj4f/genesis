@@ -22,15 +22,24 @@
         <div class="form-group">
           <label for="username">Username</label>
           <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="enter username" required />
+                 placeholder="enter username" autocomplete="username" required />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
           <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="enter password" required />
+                 placeholder="enter password" autocomplete="current-password" required />
         </div>
 
         <div v-if="error" class="alert alert-error">{{ error }}</div>
+        <div v-if="needsVerification" class="alert">
+          <form @submit.prevent="resend" class="stack">
+            <label for="verify-email" class="text-sm">Send a new verification link to:</label>
+            <input v-model="verifyEmail" id="verify-email" type="email" class="form-input"
+                   placeholder="you@domain.com" autocomplete="email" required />
+            <button type="submit" class="btn btn-secondary btn-sm" :disabled="resending">Resend link</button>
+          </form>
+        </div>
+        <div v-if="notice" class="alert alert-success">{{ notice }}</div>
 
         <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
           <span v-if="loading" class="spinner"></span>
@@ -50,12 +59,16 @@
 import { mapActions, mapState } from 'vuex';
 import api from '@/api';
 import SSOIcon from '@/components/SSOIcon.vue';
+import { safeNextPath } from '@/utils/validation';
 
 export default {
   name: 'LoginView',
   components: { SSOIcon },
   data() {
-    return { username: '', password: '', error: '', loading: false };
+    return {
+      username: '', password: '', error: '', loading: false,
+      needsVerification: false, verifyEmail: '', resending: false, notice: '',
+    };
   },
   computed: {
     ...mapState(['ssoProviders']),
@@ -67,14 +80,29 @@ export default {
     ...mapActions(['login', 'fetchSSOProviders']),
     async handleLogin() {
       this.error = '';
+      this.notice = '';
+      this.needsVerification = false;
       this.loading = true;
       try {
         await this.login({ username: this.username, password: this.password });
-        this.$router.push('/profile');
+        this.$router.replace(safeNextPath(this.$route.query.next) || '/profile');
+      } catch (e) {
+        this.error = e.message;
+        this.needsVerification = e.status === 403 && e.message === 'Email address not verified';
+      } finally {
+        this.loading = false;
+      }
+    },
+    async resend() {
+      this.resending = true;
+      try {
+        const data = await api.resendVerification(this.verifyEmail);
+        this.notice = data.message;
+        this.needsVerification = false;
       } catch (e) {
         this.error = e.message;
       } finally {
-        this.loading = false;
+        this.resending = false;
       }
     },
     ssoUrl(provider) {

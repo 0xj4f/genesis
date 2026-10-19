@@ -24,6 +24,18 @@ const routes = [
     component: () => import('@/views/SSOCallbackView.vue'),
   },
   {
+    path: '/verify-email',
+    name: 'VerifyEmail',
+    component: () => import('@/views/VerifyEmailView.vue'),
+  },
+  {
+    // Browser-facing OAuth authorize step: sign in, then consent.
+    path: '/oauth/authorize',
+    name: 'OAuthConsent',
+    component: () => import('@/views/ConsentView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/ProfileView.vue'),
@@ -55,6 +67,11 @@ const routes = [
     component: () => import('@/views/admin/DashboardView.vue'),
     meta: { requiresAdmin: true },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFoundView.vue'),
+  },
 ];
 
 const router = createRouter({
@@ -62,12 +79,13 @@ const router = createRouter({
   routes,
 });
 
+// These checks only decide what to show; the API authorizes every request.
 router.beforeEach((to, from, next) => {
   const isAuth = store.getters.isAuthenticated;
   const isAdmin = store.getters.isAdminAuthenticated;
 
   if (to.meta.requiresAuth && !isAuth) {
-    return next('/login');
+    return next({ path: '/login', query: { next: to.fullPath } });
   }
   if (to.meta.guest && isAuth) {
     return next('/profile');
