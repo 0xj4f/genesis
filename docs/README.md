@@ -84,6 +84,7 @@ curl -X POST http://localhost:8001/token \
 |-------|-------------|
 | [Getting Started](getting-started.md) | Docker setup, environment variables, local development |
 | [Native Auth Guide](native-auth-guide.md) | End-to-end: register, login, profile, sessions, refresh |
+| [Authentication & Authorization](auth.md) | Mental model, data flow diagrams, roles and policy, JWT claims, scope and audience |
 | [API Reference](api-reference.md) | All 33+ endpoints with curl examples |
 | [OIDC Integration](oidc-guide.md) | How downstream apps authenticate via Genesis |
 | [SSO Setup](sso/README.md) | Overview of Social Sign-On |
