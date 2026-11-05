@@ -57,8 +57,9 @@ def get_analytics(db: Session) -> dict:
     return get_user_analytics_db(db)
 
 
-def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: str = None) -> dict:
-    users, total = get_users_paginated_db(db, page, per_page, search)
+def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: str = None,
+                        **filters) -> dict:
+    users, total = get_users_paginated_db(db, page, per_page, search, **filters)
     total_pages = math.ceil(total / per_page) if total > 0 else 1
     return {
         "users": users,

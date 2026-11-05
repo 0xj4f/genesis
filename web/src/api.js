@@ -199,9 +199,12 @@ export default {
     return authed('admin', '/admin/analytics');
   },
 
-  getAdminUsers(page = 1, perPage = 20, search = '') {
+  // Filters: search, role, status ('active' | 'disabled'), provider, sort ('created' | 'last_login').
+  getAdminUsers({ page = 1, perPage = 20, ...filters } = {}) {
     const params = new URLSearchParams({ page, per_page: perPage });
-    if (search) params.set('search', search);
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.set(key, value);
+    }
     return authed('admin', `/admin/users?${params}`);
   },
 
@@ -223,5 +226,27 @@ export default {
 
   adminDeleteUser(userId) {
     return authed('admin', `/admin/users/${id(userId)}`, { method: 'DELETE' });
+  },
+
+  // ---- Admin: OAuth clients ----
+  getClients() {
+    return authed('admin', '/admin/clients');
+  },
+
+  getClient(clientId) {
+    return authed('admin', `/admin/clients/${id(clientId)}`);
+  },
+
+  // The response carries the client secret; it is never returned again.
+  createClient(data) {
+    return authed('admin', '/admin/clients', json('POST', data));
+  },
+
+  updateClient(clientId, data) {
+    return authed('admin', `/admin/clients/${id(clientId)}`, json('PUT', data));
+  },
+
+  rotateClientSecret(clientId) {
+    return authed('admin', `/admin/clients/${id(clientId)}/rotate-secret`, { method: 'POST' });
   },
 };

@@ -4,7 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Literal, Optional
 
 from app.database.session import get_db
 from app.auth.auth import require_admin
@@ -56,10 +56,14 @@ def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, max_length=100),
+    role: Optional[Literal["user", "admin", "root"]] = None,
+    status: Optional[Literal["active", "disabled"]] = None,
+    provider: Optional[str] = Query(None, max_length=20),
+    sort: Literal["created", "last_login"] = "created",
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_users_paginated(db, page, per_page, search)
+    return get_users_paginated(db, page, per_page, search, role=role, status=status, provider=provider, sort=sort)
 
 
 @router.get("/admin/users/{user_id}", tags=["admin"], response_model=AdminUserDetail)

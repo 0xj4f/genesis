@@ -1,94 +1,42 @@
 <template>
-  <div class="page-center">
-    <div class="auth-card card">
-      <div class="auth-header">
-        <div class="brand-mark">&gt;_</div>
-        <h1>genesis<span class="accent">_profile</span></h1>
-        <p class="text-muted">initialize your identity</p>
+  <div class="page-container narrow">
+    <div class="page-header">
+      <div>
+        <h1>Set up your profile</h1>
+        <p>Apps you sign in to with Genesis can use this, with your permission.</p>
+      </div>
+    </div>
+
+    <form class="card stack" novalidate @submit.prevent="handleCreate">
+      <ProfileFields v-model="form" names-required />
+
+      <div v-if="error" class="alert alert-error" role="alert">
+        <CircleAlert :size="18" aria-hidden="true" /><span>{{ error }}</span>
       </div>
 
-      <form @submit.prevent="handleCreate" class="stack">
-        <div class="row">
-          <div class="form-group" style="flex:1">
-            <label>First Name</label>
-            <input v-model="form.given_name" class="form-input" placeholder="Jane" required />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Last Name</label>
-            <input v-model="form.family_name" class="form-input" placeholder="Doe" required />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Nickname <span class="text-muted">(optional)</span></label>
-          <input v-model="form.nick_name" class="form-input" placeholder="0xjdoe" />
-        </div>
-        <div class="row">
-          <div class="form-group" style="flex:1">
-            <label>Date of Birth</label>
-            <input v-model="form.date_of_birth" type="date" class="form-input" />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Mobile</label>
-            <input v-model="form.mobile_number" class="form-input" placeholder="+1 555 123 4567" />
-          </div>
-        </div>
-
-        <div class="divider">address</div>
-
-        <div class="form-group">
-          <label>Address Line 1</label>
-          <input v-model="form.address_line1" class="form-input" placeholder="123 Main St" />
-        </div>
-        <div class="form-group">
-          <label>Address Line 2 <span class="text-muted">(optional)</span></label>
-          <input v-model="form.address_line2" class="form-input" placeholder="Apt 4B" />
-        </div>
-        <div class="row">
-          <div class="form-group" style="flex:1">
-            <label>City</label>
-            <input v-model="form.city" class="form-input" placeholder="New York" />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>State</label>
-            <input v-model="form.state" class="form-input" placeholder="NY" />
-          </div>
-        </div>
-        <div class="row">
-          <div class="form-group" style="flex:1">
-            <label>Zip Code</label>
-            <input v-model="form.zip_code" class="form-input" placeholder="10001" />
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Country</label>
-            <input v-model="form.country" class="form-input" placeholder="US" />
-          </div>
-        </div>
-
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
-
-        <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
-          <span v-if="loading" class="spinner"></span>
-          <span v-else>Initialize Profile</span>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary btn-lg" :disabled="loading">
+          <span v-if="loading" class="spinner" aria-hidden="true"></span>
+          {{ loading ? 'Saving…' : 'Save profile' }}
         </button>
-      </form>
-    </div>
+      </div>
+    </form>
   </div>
 </template>
 
 <script>
 import { mapActions } from 'vuex';
+import { CircleAlert } from 'lucide-vue-next';
+import ProfileFields, { PROFILE_FIELDS } from '@/components/ProfileFields.vue';
 import { withoutEmpty } from '@/utils/validation';
+import { toast } from '@/utils/feedback';
 
 export default {
   name: 'CreateProfileView',
+  components: { CircleAlert, ProfileFields },
   data() {
     return {
-      form: {
-        given_name: '', family_name: '', nick_name: '',
-        date_of_birth: '', mobile_number: '',
-        address_line1: '', address_line2: '',
-        city: '', state: '', zip_code: '', country: '',
-      },
+      form: Object.fromEntries(PROFILE_FIELDS.map(key => [key, ''])),
       error: '',
       loading: false,
     };
@@ -97,6 +45,10 @@ export default {
     ...mapActions(['createProfile']),
     async handleCreate() {
       this.error = '';
+      if (!this.form.given_name.trim() || !this.form.family_name.trim()) {
+        this.error = 'Enter your first and last name.';
+        return;
+      }
       this.loading = true;
       try {
         // Identity fields (user id, email, sub) are set by the API.
@@ -106,6 +58,7 @@ export default {
           family_name: this.form.family_name,
         };
         await this.createProfile(payload);
+        toast('Profile saved');
         this.$router.push('/profile');
       } catch (e) {
         this.error = e.message;
@@ -118,35 +71,10 @@ export default {
 </script>
 
 <style scoped>
-.auth-card { width: 100%; max-width: 500px; }
+.narrow { max-width: 640px; }
+.actions { display: flex; justify-content: flex-end; }
 
-.auth-header {
-  text-align: center;
-  margin-bottom: var(--space-xl);
-}
-
-.auth-header h1 {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-top: var(--space-md);
-}
-
-.accent { color: var(--accent); }
-
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-accent);
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--text-xl);
-  font-family: var(--font-mono);
+@media (max-width: 559px) {
+  .actions .btn { width: 100%; }
 }
 </style>

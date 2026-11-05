@@ -1,44 +1,52 @@
 <template>
-  <div class="page-center">
-    <div class="auth-card card admin-card">
-      <div class="auth-header">
-        <div class="brand-mark admin-mark">!</div>
-        <h1>genesis<span class="warn">_admin</span></h1>
-        <p class="text-muted">restricted access</p>
+  <AuthLayout>
+    <div class="auth-header">
+      <BrandMark large />
+      <span class="badge badge-warning admin-chip"><ShieldCheck :size="13" aria-hidden="true" />Admin console</span>
+      <h1>Sign in to the admin console</h1>
+      <p>For administrators of this Genesis tenant.</p>
+    </div>
+
+    <form class="stack" @submit.prevent="handleLogin">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input v-model="username" id="username" type="text" class="form-input" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <PasswordInput id="password" v-model="password" autocomplete="current-password" required
+                       :invalid="!!error" :describedby="error ? 'login-error' : ''" />
       </div>
 
-      <form @submit.prevent="handleLogin" class="stack">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input v-model="username" id="username" type="text" class="form-input"
-                 placeholder="admin credentials" autocomplete="username" required />
-        </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input v-model="password" id="password" type="password" class="form-input"
-                 placeholder="enter password" autocomplete="current-password" required />
-        </div>
+      <div v-if="error" id="login-error" class="alert alert-error" role="alert">
+        <CircleAlert :size="18" aria-hidden="true" /><span>{{ error }}</span>
+      </div>
 
-        <div v-if="error" class="alert alert-error">{{ error }}</div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="loading">
+        <span v-if="loading" class="spinner" aria-hidden="true"></span>
+        {{ loading ? 'Signing in…' : 'Sign in' }}
+      </button>
+    </form>
 
-        <button type="submit" class="btn btn-admin btn-block btn-lg" :disabled="loading">
-          <span v-if="loading" class="spinner"></span>
-          <span v-else>Access Console</span>
-        </button>
-      </form>
-
-      <p class="text-center text-sm mt-lg text-muted">
-        <router-link to="/login" class="link">Back to user login</router-link>
-      </p>
-    </div>
-  </div>
+    <p class="auth-footer-link">
+      Not an administrator?
+      <router-link to="/login" class="link">Go to user sign in</router-link>
+    </p>
+  </AuthLayout>
 </template>
 
 <script>
 import { mapActions } from 'vuex';
+import { CircleAlert, ShieldCheck } from 'lucide-vue-next';
+import AuthLayout from '@/components/ui/AuthLayout.vue';
+import BrandMark from '@/components/ui/BrandMark.vue';
+import PasswordInput from '@/components/ui/PasswordInput.vue';
+import { safeNextPath } from '@/utils/validation';
 
 export default {
   name: 'AdminLoginView',
+  components: { CircleAlert, ShieldCheck, AuthLayout, BrandMark, PasswordInput },
   data() {
     return { username: '', password: '', error: '', loading: false };
   },
@@ -49,7 +57,8 @@ export default {
       this.loading = true;
       try {
         await this.adminLogin({ username: this.username, password: this.password });
-        this.$router.push('/admin');
+        const next = safeNextPath(this.$route.query.next);
+        this.$router.replace(next?.startsWith('/admin/') ? next : '/admin');
       } catch (e) {
         this.error = e.message;
       } finally {
@@ -61,51 +70,7 @@ export default {
 </script>
 
 <style scoped>
-.auth-card { width: 100%; max-width: 420px; }
-
-.admin-card::before { background: linear-gradient(135deg, #f59e0b, #d97706) !important; }
-
-.auth-header {
-  text-align: center;
-  margin-bottom: var(--space-xl);
-}
-
-.auth-header h1 {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-top: var(--space-md);
-}
-
-.warn { color: #f59e0b; }
-
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--text-xl);
-  font-family: var(--font-mono);
-}
-
-.admin-mark {
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #f59e0b;
-}
-
-.btn-admin {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #0a0e17;
-  font-weight: 700;
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
-}
-
-.btn-admin:hover:not(:disabled) {
-  box-shadow: 0 0 30px rgba(245, 158, 11, 0.25);
-}
+.auth-header { display: flex; flex-direction: column; align-items: flex-start; }
+.auth-header .brand-mark { margin-bottom: var(--space-md); }
+.admin-chip { margin-bottom: var(--space-sm); }
 </style>

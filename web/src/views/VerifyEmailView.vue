@@ -1,35 +1,45 @@
 <template>
-  <div class="page-center">
-    <div class="card text-center" style="max-width: 420px; width: 100%;">
-      <div v-if="loading" class="stack" style="align-items: center;">
-        <div class="spinner" style="width: 32px; height: 32px;"></div>
-        <p class="text-muted">Verifying your email...</p>
-      </div>
-      <div v-else-if="verifiedEmail" class="stack">
-        <h2>Email verified</h2>
-        <div class="alert alert-success">{{ verifiedEmail }} is confirmed.</div>
-        <router-link :to="isAuthenticated ? '/profile' : '/login'" class="btn btn-primary btn-block">Continue</router-link>
-      </div>
-      <div v-else class="stack">
-        <h2>Verification failed</h2>
-        <div class="alert alert-error">{{ error }}</div>
-        <form @submit.prevent="resend" class="stack">
-          <label for="email" class="text-sm text-muted">Send a new link to:</label>
-          <input v-model="email" id="email" type="email" class="form-input" autocomplete="email" required />
-          <button type="submit" class="btn btn-secondary btn-block" :disabled="sending">Resend link</button>
-        </form>
-        <div v-if="notice" class="alert alert-success">{{ notice }}</div>
+  <AuthLayout>
+    <div v-if="loading" class="status">
+      <span class="spinner status-spinner" aria-hidden="true"></span>
+      <h1>Verifying your email…</h1>
+    </div>
+
+    <div v-else-if="verifiedEmail" class="status">
+      <span class="status-icon ok" aria-hidden="true"><MailCheck :size="24" /></span>
+      <h1>Email verified</h1>
+      <p><strong>{{ verifiedEmail }}</strong> is confirmed. You're all set.</p>
+      <router-link :to="isAuthenticated ? '/profile' : '/login'" class="btn btn-primary btn-block btn-lg mt-lg">
+        {{ isAuthenticated ? 'Continue' : 'Sign in' }}
+      </router-link>
+    </div>
+
+    <div v-else class="status">
+      <span class="status-icon bad" aria-hidden="true"><MailX :size="24" /></span>
+      <h1>This link didn't work</h1>
+      <p>{{ error }}</p>
+      <form class="stack-sm resend" @submit.prevent="resend">
+        <label for="email" class="form-label">Send a new link to</label>
+        <input v-model="email" id="email" type="email" inputmode="email" class="form-input"
+               placeholder="you@company.com" autocomplete="email" autocapitalize="none" required />
+        <button type="submit" class="btn btn-primary btn-block" :disabled="sending">Resend link</button>
+      </form>
+      <div v-if="notice" class="alert alert-success mt-md" role="status">
+        <CircleCheck :size="18" aria-hidden="true" /><span>{{ notice }}</span>
       </div>
     </div>
-  </div>
+  </AuthLayout>
 </template>
 
 <script>
 import { mapGetters } from 'vuex';
+import { MailCheck, MailX, CircleCheck } from 'lucide-vue-next';
 import api from '@/api';
+import AuthLayout from '@/components/ui/AuthLayout.vue';
 
 export default {
   name: 'VerifyEmailView',
+  components: { MailCheck, MailX, CircleCheck, AuthLayout },
   data() {
     return { loading: true, verifiedEmail: '', error: '', email: '', sending: false, notice: '' };
   },
@@ -69,3 +79,7 @@ export default {
   },
 };
 </script>
+
+<style scoped>
+.resend { margin-top: var(--space-lg); text-align: left; }
+</style>

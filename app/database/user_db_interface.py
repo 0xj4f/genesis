@@ -99,14 +99,25 @@ def get_user_by_provider_db(db: Session, provider: str, provider_id: str):
     ).first()
 
 
-def get_users_paginated_db(db: Session, page: int = 1, per_page: int = 20, search: str = None):
+def get_users_paginated_db(db: Session, page: int = 1, per_page: int = 20, search: str = None,
+                           role: str = None, status: str = None, provider: str = None,
+                           sort: str = "created"):
     query = db.query(User)
     if search:
         like = f"%{search}%"
         query = query.filter(
             (User.username.ilike(like)) | (User.email.ilike(like))
         )
-    query = query.order_by(User.created_at.desc())
+    if role:
+        query = query.filter(User.role == role)
+    if status:
+        query = query.filter(User.disabled == (status == "disabled"))
+    if provider:
+        query = query.filter(User.auth_provider == provider)
+    if sort == "last_login":
+        query = query.filter(User.last_login_at.isnot(None)).order_by(User.last_login_at.desc())
+    else:
+        query = query.order_by(User.created_at.desc())
     total = query.count()
     users = query.offset((page - 1) * per_page).limit(per_page).all()
     return users, total
