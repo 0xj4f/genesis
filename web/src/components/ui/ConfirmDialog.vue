@@ -1,6 +1,6 @@
 <template>
   <dialog ref="dialog" class="confirm" aria-labelledby="confirm-title" @cancel.prevent="settle(false)"
-          @click="onBackdrop">
+          @close="onClose" @click="onBackdrop">
     <form method="dialog" class="confirm-body" @submit.prevent="settle(true)">
       <div class="confirm-icon" :class="{ danger: state.danger }" aria-hidden="true">
         <TriangleAlert v-if="state.danger" :size="20" />
@@ -41,6 +41,10 @@ export default {
     },
   },
   watch: {
+    // A prompt belongs to the page that asked; navigating away cancels it.
+    '$route.fullPath'() {
+      if (this.state.open) this.settle(false);
+    },
     'state.open'(open) {
       const dialog = this.$refs.dialog;
       if (open) {
@@ -55,6 +59,10 @@ export default {
     settle(result) {
       if (result && !this.canConfirm) return;
       settleConfirm(result);
+    },
+    // The browser can close the dialog itself (repeated Esc in Chromium).
+    onClose() {
+      if (this.state.open) settleConfirm(false);
     },
     onBackdrop(event) {
       if (event.target === this.$refs.dialog) this.settle(false);
@@ -124,5 +132,4 @@ export default {
 }
 
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
-@keyframes pop-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 </style>

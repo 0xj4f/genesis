@@ -11,15 +11,11 @@
       <span class="skeleton" style="height: 180px;"></span>
     </div>
 
-    <div v-else-if="loadError" class="alert alert-error" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ loadError }}</div>
-      <button class="btn btn-secondary btn-sm" @click="loadUser(userId)">Retry</button>
-    </div>
+    <ErrorAlert v-else-if="loadError" :message="loadError" @retry="loadUser(userId)" />
 
     <div v-else-if="user" class="detail">
       <!-- Identity -->
-      <div class="identity">
+      <div class="sheet-identity">
         <img v-if="avatar" :src="avatar" class="avatar avatar-lg" alt="" referrerpolicy="no-referrer" />
         <span v-else class="avatar avatar-lg avatar-placeholder">{{ user.username[0].toUpperCase() }}</span>
         <div class="wrap-anywhere">
@@ -32,12 +28,21 @@
               {{ user.email_verified ? 'Email verified' : 'Email unverified' }}
             </span>
             <span v-if="isSelf" class="badge badge-primary">You</span>
+            <span v-if="user.must_change_password" class="badge badge-warning" :title="dateTime(user.password_expires_at)">
+              Must change password{{ user.password_expires_at ? ` · ${expiresIn(user.password_expires_at)}` : '' }}
+            </span>
           </div>
         </div>
       </div>
 
+      <router-link v-if="user.pending_request_id" :to="`/admin/requests/${user.pending_request_id}`" class="alert alert-warning pending">
+        <Inbox :size="18" aria-hidden="true" />
+        <span class="spacer">Asked for a password reset {{ relativeTime(user.pending_password_reset_at).toLowerCase() }}</span>
+        <ChevronRight :size="16" aria-hidden="true" />
+      </router-link>
+
       <!-- Account -->
-      <section class="section">
+      <section class="sheet-section">
         <h4 class="section-label">Account</h4>
         <dl class="dl card-lite">
           <div class="dl-row">
@@ -51,11 +56,11 @@
       </section>
 
       <!-- Security -->
-      <section class="section">
+      <section class="sheet-section">
         <h4 class="section-label">Security</h4>
         <dl class="dl card-lite">
           <div class="dl-row"><dt>Last sign-in</dt><dd>{{ user.last_login_at ? dateTime(user.last_login_at) : 'Never' }}</dd></div>
-          <div class="dl-row" v-if="user.last_login_method"><dt>Method</dt><dd>{{ capitalize(user.last_login_method) }}</dd></div>
+          <div class="dl-row" v-if="user.last_login_method"><dt>Method</dt><dd class="cap">{{ user.last_login_method }}</dd></div>
           <div class="dl-row" v-if="user.last_login_ip"><dt>IP address</dt><dd class="mono">{{ user.last_login_ip }}</dd></div>
           <div class="dl-row"><dt>Active sessions</dt><dd class="tabular">{{ user.sessions_count }}</dd></div>
           <div class="dl-row">
@@ -73,7 +78,7 @@
       </section>
 
       <!-- Profile -->
-      <section v-if="profileRows.length" class="section">
+      <section v-if="profileRows.length" class="sheet-section">
         <h4 class="section-label">Profile</h4>
         <dl class="dl card-lite">
           <div v-for="row in profileRows" :key="row.label" class="dl-row"><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
@@ -82,7 +87,7 @@
 
       <!-- Management (hidden when the API would refuse it; the API still decides) -->
       <template v-if="canManage">
-        <section v-if="isRootAdmin && !isSelf" class="section">
+        <section v-if="isRootAdmin && !isSelf" class="sheet-section">
           <h4 class="section-label">Role</h4>
           <div class="card-lite pad">
             <div class="segmented role-picker" role="radiogroup" aria-label="Role">
@@ -96,28 +101,38 @@
           </div>
         </section>
 
-        <section v-if="!isSelf" class="section">
+        <section v-if="!isSelf" class="sheet-section">
           <h4 class="section-label">Password</h4>
-          <div class="card-lite pad">
-            <button v-if="!showReset" class="btn btn-secondary btn-sm" @click="showReset = true">
-              <KeyRound :size="16" aria-hidden="true" />Set a new password
-            </button>
-            <form v-else class="stack-sm" novalidate @submit.prevent="resetPassword">
+          <div class="card-lite pad stack-sm">
+            <p class="form-hint">
+              A one-time password lets {{ user.username }} sign in once and choose their own. You send it to them yourself.
+            </p>
+            <div class="row-wrap">
+              <button class="btn btn-primary btn-sm" :disabled="busy" @click="generatePassword">
+                <KeyRound :size="16" aria-hidden="true" />Generate one-time password
+              </button>
+              <button v-if="!showReset" class="btn btn-ghost btn-sm" @click="showReset = true">Set password manually</button>
+            </div>
+            <form v-if="showReset" class="stack-sm manual" novalidate @submit.prevent="resetPassword">
               <label for="reset-password" class="form-label">New password</label>
               <PasswordInput id="reset-password" v-model="newPassword" autocomplete="new-password"
                              :invalid="!!passwordProblem" describedby="reset-hint" />
               <p id="reset-hint" class="form-hint" :class="{ 'form-error': passwordProblem }">
                 {{ passwordProblem || 'At least 12 characters with upper and lower case, a number and a symbol. Signs the user out everywhere.' }}
               </p>
+              <label class="check">
+                <input v-model="requireChange" type="checkbox" />
+                <span>Require a new password at next sign-in</span>
+              </label>
               <div class="row mt-xs">
-                <button type="submit" class="btn btn-primary btn-sm" :disabled="busy">Set password</button>
+                <button type="submit" class="btn btn-secondary btn-sm" :disabled="busy">Set password</button>
                 <button type="button" class="btn btn-ghost btn-sm" @click="cancelReset">Cancel</button>
               </div>
             </form>
           </div>
         </section>
 
-        <section v-if="user.role !== 'root' && !isSelf" class="section">
+        <section v-if="user.role !== 'root' && !isSelf" class="sheet-section">
           <h4 class="section-label danger-label">Danger zone</h4>
           <div class="danger-zone">
             <div class="danger-row">
@@ -149,25 +164,32 @@
       </div>
     </div>
   </AppSheet>
+  <!-- Outside the sheet so closing the sheet can never strand it. -->
+  <OneTimePasswordDialog :issued="issued" @close="issued = null" />
 </template>
 
 <script>
 import { mapGetters, mapState } from 'vuex';
-import { CircleAlert, KeyRound, Lock } from 'lucide-vue-next';
+import { CircleAlert, KeyRound, Lock, Inbox, ChevronRight } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import AppSheet from '@/components/ui/AppSheet.vue';
 import CopyButton from '@/components/ui/CopyButton.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
 import PasswordInput from '@/components/ui/PasswordInput.vue';
+import OneTimePasswordDialog from '@/components/admin/OneTimePasswordDialog.vue';
+import { refreshRequestCount } from '@/utils/adminRequests';
 import { assetUrl } from '@/utils/url';
 import { passwordError } from '@/utils/validation';
 import { toast, confirmAction } from '@/utils/feedback';
-import { dateTime, shortDate, capitalize, roleBadge } from '@/utils/format';
+import { dateTime, shortDate, roleBadge, relativeTime, toDate } from '@/utils/format';
 import { providerName } from '@/utils/messages';
 
 export default {
   name: 'UserDetailPane',
-  components: { CircleAlert, KeyRound, Lock, AppSheet, CopyButton, StatusBadge, PasswordInput },
+  components: {
+    ErrorAlert, CircleAlert, KeyRound, Lock, Inbox, ChevronRight, AppSheet, CopyButton, StatusBadge, PasswordInput, OneTimePasswordDialog,
+  },
   props: {
     open: Boolean,
     userId: { type: String, default: null },
@@ -181,6 +203,8 @@ export default {
       busy: false,
       selectedRole: 'user',
       showReset: false,
+      requireChange: true,
+      issued: null,
       newPassword: '',
       passwordProblem: '',
       actionError: '',
@@ -231,10 +255,11 @@ export default {
   },
   methods: {
     dateTime,
-    capitalize,
+    relativeTime,
     providerName,
     roleBadge,
     resetState() {
+      this.issued = null;
       this.actionError = '';
       this.loadError = '';
       this.cancelReset();
@@ -252,33 +277,38 @@ export default {
         this.loading = false;
       }
     },
-    // Runs an admin action, then reports, refreshes the list and reloads this user.
-    async run(action, success, { reload = true } = {}) {
+    // Runs an admin action on user `id` (captured before any prompt, so leaving
+    // the pane meanwhile cannot redirect it), then reports, refreshes the list
+    // and reloads the user if still shown. Returns the API result, or null.
+    async run(id, action, success, { reload = true } = {}) {
       this.actionError = '';
       this.busy = true;
       try {
-        const result = await action();
+        const result = await action(id);
         toast(typeof success === 'function' ? success(result) : success);
         this.$emit('updated');
-        if (reload) await this.loadUser(this.userId);
-        return true;
+        if (reload && id === this.userId) await this.loadUser(id);
+        return result;
       } catch (e) {
         this.actionError = e.message;
-        return false;
+        return null;
       } finally {
         this.busy = false;
       }
     },
     async changeRole() {
+      const id = this.userId;
+      const role = this.selectedRole;
       const ok = await confirmAction({
-        title: `Change ${this.user.username}'s role to ${this.selectedRole}?`,
+        title: `Change ${this.user.username}'s role to ${role}?`,
         message: 'Their permissions change immediately and they are signed out of every session.',
         confirmLabel: 'Change role',
       });
       if (!ok) return;
-      await this.run(() => api.updateUserRole(this.userId, this.selectedRole), `Role changed to ${this.selectedRole}`);
+      await this.run(id, target => api.updateUserRole(target, role), `Role changed to ${role}`);
     },
     async toggleStatus() {
+      const id = this.userId;
       const disabling = !this.user.disabled;
       const ok = await confirmAction({
         title: `${disabling ? 'Disable' : 'Enable'} ${this.user.username}?`,
@@ -289,37 +319,61 @@ export default {
         danger: disabling,
       });
       if (!ok) return;
-      await this.run(() => api.toggleUserStatus(this.userId), res => res.message);
+      await this.run(id, api.toggleUserStatus, res => res.message);
     },
     async deleteUser() {
+      const id = this.userId;
+      const name = this.user.username;
       const ok = await confirmAction({
-        title: `Delete ${this.user.username}?`,
+        title: `Delete ${name}?`,
         message: 'The account, profile and sessions are permanently removed. This cannot be undone.',
         confirmLabel: 'Delete user',
         danger: true,
-        requireText: this.user.username,
+        requireText: name,
       });
       if (!ok) return;
-      const name = this.user.username;
-      if (await this.run(() => api.adminDeleteUser(this.userId), `${name} was deleted`, { reload: false })) {
+      if (await this.run(id, api.adminDeleteUser, `${name} was deleted`, { reload: false })) {
         this.$emit('close');
       }
     },
     async resetPassword() {
       this.passwordProblem = passwordError(this.newPassword);
       if (this.passwordProblem) return;
+      const id = this.userId;
+      const request = { newPassword: this.newPassword, requirePasswordChange: this.requireChange };
       const ok = await confirmAction({
         title: `Set a new password for ${this.user.username}?`,
         message: 'Their current password stops working and every session is signed out.',
         confirmLabel: 'Set password',
       });
       if (!ok) return;
-      if (await this.run(() => api.adminResetPassword(this.userId, this.newPassword), res => res.message)) {
+      if (await this.run(id, target => api.adminResetPassword(target, request), res => res.message)) {
         this.cancelReset();
+        refreshRequestCount();
       }
+    },
+    async generatePassword() {
+      const id = this.userId;
+      const ok = await confirmAction({
+        title: `Generate a one-time password for ${this.user.username}?`,
+        message: 'Their current password stops working and every session is signed out. They choose a new password at sign-in.',
+        confirmLabel: 'Generate password',
+      });
+      if (!ok) return;
+      const result = await this.run(id, target => api.adminResetPassword(target, { generate: true }),
+        'One-time password generated');
+      // Shown only if the admin is still looking at this user.
+      if (result && id === this.userId) this.issued = result;
+      if (result) refreshRequestCount();
+    },
+    expiresIn(value) {
+      const hours = Math.round((toDate(value) - Date.now()) / 3600000);
+      if (hours <= 0) return 'expired';
+      return hours < 48 ? `expires in ${hours}h` : `expires in ${Math.round(hours / 24)}d`;
     },
     cancelReset() {
       this.showReset = false;
+      this.requireChange = true;
       this.newPassword = '';
       this.passwordProblem = '';
     },
@@ -328,34 +382,14 @@ export default {
 </script>
 
 <style scoped>
-.identity {
-  display: flex;
-  gap: var(--space-md);
-  align-items: center;
-  margin-bottom: var(--space-lg);
-}
-
-.identity h3 { font-size: var(--text-lg); }
-
-.section { margin-top: var(--space-lg); }
-
-.card-lite {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 0 var(--space-md);
-}
-
-@media (min-width: 768px) {
-  .card-lite { background: var(--surface-2); }
-}
-
-.card-lite.pad { padding: var(--space-md); }
-
 .role-picker { width: 100%; }
 .role-picker button { flex: 1; }
 
 .danger-label { color: var(--danger); }
+
+.pending { margin-bottom: var(--space-md); text-decoration: none; align-items: center; }
+.pending:hover { filter: brightness(1.05); }
+.manual { margin-top: var(--space-sm); padding-top: var(--space-md); border-top: 1px solid var(--border); }
 
 .danger-zone {
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);

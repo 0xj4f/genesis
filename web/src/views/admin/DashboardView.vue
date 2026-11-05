@@ -10,11 +10,15 @@
       </router-link>
     </div>
 
-    <div v-if="error" class="alert alert-error mb-md" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ error }}</div>
-      <button class="btn btn-secondary btn-sm" @click="load">Retry</button>
-    </div>
+    <ErrorAlert v-if="error" :message="error" class="mb-md" @retry="load" />
+
+    <router-link v-if="counts.open" to="/admin/requests" class="alert alert-warning requests-banner">
+      <Inbox :size="18" aria-hidden="true" />
+      <span class="spacer">
+        <strong>{{ counts.open }} {{ counts.open === 1 ? 'person is' : 'people are' }} waiting for a password reset</strong>
+      </span>
+      <span class="text-md">Review</span><ChevronRight :size="16" aria-hidden="true" />
+    </router-link>
 
     <!-- KPIs -->
     <section class="kpis" aria-label="Key metrics">
@@ -80,20 +84,22 @@
 </template>
 
 <script>
-import { Users, UserCheck, UserPlus, ShieldCheck, ChevronRight, CircleAlert } from 'lucide-vue-next';
+import { Users, UserCheck, UserPlus, ShieldCheck, ChevronRight, Inbox } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import SkeletonRows from '@/components/ui/SkeletonRows.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import { relativeTime, formatNumber } from '@/utils/format';
 import { providerName } from '@/utils/messages';
+import { requestCounts } from '@/utils/adminRequests';
 
 const PROVIDER_COLORS = ['var(--primary)', '#a78bfa', '#f59e0b', '#34d399', '#f472b6', '#94a3b8'];
 
 export default {
   name: 'AdminDashboard',
-  components: { Users, ChevronRight, CircleAlert, SkeletonRows, EmptyState },
+  components: { ErrorAlert, Users, ChevronRight, Inbox, SkeletonRows, EmptyState },
   data() {
-    return { analytics: {}, recent: [], loading: true, error: '' };
+    return { analytics: {}, recent: [], loading: true, error: '', counts: requestCounts };
   },
   computed: {
     kpis() {
@@ -151,6 +157,9 @@ export default {
 </script>
 
 <style scoped>
+.requests-banner { margin-bottom: var(--space-md); align-items: center; text-decoration: none; }
+.requests-banner:hover { filter: brightness(1.05); }
+
 .kpis {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

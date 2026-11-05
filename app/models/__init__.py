@@ -6,3 +6,4 @@ from app.models.oauth_client_db_model import OAuthClient
 from app.models.authz_code_db_model import AuthorizationCode
 from app.models.jwk_db_model import JWKKey
 from app.models.email_verification_db_model import EmailVerificationToken
+from app.models.account_request_db_model import AccountRequest

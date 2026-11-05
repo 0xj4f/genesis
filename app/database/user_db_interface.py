@@ -3,7 +3,7 @@ from app.models.user_api_model import UserCreate, UserUpdate
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def create_user_db(db: Session, user_create: UserCreate) -> User:
@@ -53,10 +53,20 @@ def update_user_by_id_db(db: Session, user_id: str, user_update: UserUpdate):
     return user
 
 
-def set_user_password_db(db: Session, user: User, password_hash: str, reason: str, keep_session_id: str = None) -> User:
-    """Store a new password hash and revoke the user's other sessions."""
+def set_user_password_db(db: Session, user: User, password_hash: str, reason: str, keep_session_id: str = None,
+                         temporary: bool = False) -> User:
+    """Store a new password hash and revoke the user's other sessions.
+
+    A temporary password must be replaced at the next sign-in and stops working
+    after TEMPORARY_PASSWORD_TTL_HOURS; any other password clears that state.
+    """
+    from app.config import get_settings
     from app.models.session_db_model import Session as LoginSession
     user.password = password_hash
+    user.must_change_password = temporary
+    user.password_expires_at = (
+        datetime.utcnow() + timedelta(hours=get_settings().TEMPORARY_PASSWORD_TTL_HOURS) if temporary else None
+    )
     sessions = db.query(LoginSession).filter(
         LoginSession.user_id == str(user.id), LoginSession.is_active == True,  # noqa: E712
     )
@@ -76,6 +86,9 @@ def delete_user_by_id_db(db: Session, user_id: str):
     from app.models.authz_code_db_model import AuthorizationCode
     from app.models.email_verification_db_model import EmailVerificationToken
     from app.models.profile_db_model import Profile
+    from app.models.account_request_db_model import AccountRequest
+    db.query(AccountRequest).filter(AccountRequest.user_id == user_id).delete()
+    db.query(AccountRequest).filter(AccountRequest.resolved_by == user_id).update({"resolved_by": None})
     db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user_id).delete()
     db.query(AuthorizationCode).filter(AuthorizationCode.user_id == user_id).delete()
     db.query(Profile).filter(Profile.user_id == user_id).delete()

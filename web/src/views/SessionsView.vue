@@ -10,11 +10,7 @@
       </button>
     </div>
 
-    <div v-if="error" class="alert alert-error mb-md" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ error }}</div>
-      <button class="btn btn-secondary btn-sm" @click="loadSessions">Retry</button>
-    </div>
+    <ErrorAlert v-if="error" :message="error" class="mb-md" @retry="loadSessions" />
 
     <div class="card card-flush">
       <SkeletonRows v-if="loading" :rows="3" />
@@ -58,8 +54,9 @@
 </template>
 
 <script>
-import { CircleAlert, LogOut, MonitorSmartphone, Smartphone, Tablet, Laptop, Monitor } from 'lucide-vue-next';
+import { LogOut, MonitorSmartphone, Smartphone, Tablet, Laptop, Monitor } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import SkeletonRows from '@/components/ui/SkeletonRows.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import { relativeTime } from '@/utils/format';
@@ -68,7 +65,7 @@ import { toast, confirmAction } from '@/utils/feedback';
 
 export default {
   name: 'SessionsView',
-  components: { CircleAlert, LogOut, MonitorSmartphone, SkeletonRows, EmptyState },
+  components: { ErrorAlert, LogOut, MonitorSmartphone, SkeletonRows, EmptyState },
   data() {
     return {
       sessions: [],

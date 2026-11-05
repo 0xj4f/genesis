@@ -15,7 +15,10 @@ from app.services.user_service import (
 from app.models.user_api_model import (
     UserCreate, User, UserUpdate, UserDeleteResponse, UserSearchRequest, PasswordChangeRequest,
 )
-from app.auth.auth import oauth_authenticate_current_user, current_user_with_claims, require_admin, require_reauth
+from app.auth.auth import (
+    oauth_authenticate_current_user, oauth_authenticate_pending_user, current_user_with_claims,
+    current_user_with_claims_pending, require_admin, require_reauth,
+)
 from app.auth.policy import deny, ensure_can_manage
 from app.utils.audit import security_event
 
@@ -37,7 +40,7 @@ def get_users(db: Session = Depends(get_db), current_user=Depends(require_admin)
 def change_own_password(
     body: PasswordChangeRequest,
     db: Session = Depends(get_db),
-    auth=Depends(current_user_with_claims),
+    auth=Depends(current_user_with_claims_pending),
 ):
     """Change your password. Requires the current password (or, for SSO-only
     accounts, a recent sign-in). Other sessions are signed out."""
@@ -122,5 +125,5 @@ otherwise authentication process gets errors
 """
 
 @router.get("/me/", response_model=User)
-def read_users_me(current_user: dict = Depends(oauth_authenticate_current_user)):
+def read_users_me(current_user: dict = Depends(oauth_authenticate_pending_user)):
     return current_user

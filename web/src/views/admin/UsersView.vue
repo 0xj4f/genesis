@@ -5,6 +5,9 @@
         <h1>Users</h1>
         <p>{{ loading && !users.length ? 'Loading accounts…' : `${total.toLocaleString()} ${total === 1 ? 'account' : 'accounts'}` }}</p>
       </div>
+      <button class="btn btn-primary" @click="creating = true">
+        <UserPlus :size="16" aria-hidden="true" />New user
+      </button>
     </div>
 
     <div class="toolbar">
@@ -28,11 +31,7 @@
       </div>
     </div>
 
-    <div v-if="error" class="alert alert-error mb-md" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ error }}</div>
-      <button class="btn btn-secondary btn-sm" @click="loadUsers">Retry</button>
-    </div>
+    <ErrorAlert v-if="error" :message="error" class="mb-md" @retry="loadUsers" />
 
     <div class="card card-flush">
       <SkeletonRows v-if="loading && !users.length" :rows="6" />
@@ -56,7 +55,8 @@
               <div class="list-row-sub truncate">{{ u.email }}</div>
               <div class="row-meta">
                 <StatusBadge :label="u.disabled ? 'Disabled' : 'Active'" :tone="u.disabled ? 'danger' : 'success'" />
-                <span class="text-sm text-subtle">{{ providerLabel(u.auth_provider) }} · {{ u.last_login_at ? relativeTime(u.last_login_at) : 'Never signed in' }}</span>
+                <span v-if="u.must_change_password" class="badge badge-warning">Must change password</span>
+                <span class="text-sm text-subtle">{{ providerName(u.auth_provider) }} · {{ u.last_login_at ? relativeTime(u.last_login_at) : 'Never signed in' }}</span>
               </div>
             </div>
             <ChevronRight :size="18" class="list-row-chevron" aria-hidden="true" />
@@ -87,8 +87,13 @@
                 </div>
               </td>
               <td><span class="badge cap" :class="roleBadge(u.role)">{{ u.role }}</span></td>
-              <td><StatusBadge :label="u.disabled ? 'Disabled' : 'Active'" :tone="u.disabled ? 'danger' : 'success'" /></td>
-              <td class="text-muted">{{ providerLabel(u.auth_provider) }}</td>
+              <td>
+                <div class="badge-row">
+                  <StatusBadge :label="u.disabled ? 'Disabled' : 'Active'" :tone="u.disabled ? 'danger' : 'success'" />
+                  <span v-if="u.must_change_password" class="badge badge-warning">Must change password</span>
+                </div>
+              </td>
+              <td class="text-muted">{{ providerName(u.auth_provider) }}</td>
               <td class="text-muted tabular" :title="u.last_login_at ? dateTime(u.last_login_at) : ''">{{ relativeTime(u.last_login_at) }}</td>
               <td class="chevron-cell"><ChevronRight :size="16" class="list-row-chevron" aria-hidden="true" /></td>
             </tr>
@@ -108,13 +113,16 @@
     </div>
 
     <UserDetailPane :open="!!selectedId" :user-id="selectedId" @close="closeDetail" @updated="loadUsers" />
+    <NewUserSheet :open="creating" @close="creating = false" @created="onCreated" />
   </div>
 </template>
 
 <script>
-import { Search, ChevronDown, ChevronRight, ChevronLeft, X, Users, CircleAlert } from 'lucide-vue-next';
+import { Search, ChevronDown, ChevronRight, ChevronLeft, X, Users, UserPlus } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import UserDetailPane from '@/components/admin/UserDetailPane.vue';
+import NewUserSheet from '@/components/admin/NewUserSheet.vue';
 import SkeletonRows from '@/components/ui/SkeletonRows.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
@@ -122,13 +130,23 @@ import { relativeTime, dateTime, roleBadge } from '@/utils/format';
 import { providerName } from '@/utils/messages';
 
 const PER_PAGE = 20;
-const FILTER_KEYS = ['role', 'status', 'provider'];
+// Each filter maps to a query parameter of GET /admin/users and of this page's URL.
+const FILTERS = [
+  { key: 'role', label: 'Role', any: 'Any role', options: [
+    { value: 'user', label: 'User' }, { value: 'admin', label: 'Admin' }, { value: 'root', label: 'Root' }] },
+  { key: 'status', label: 'Status', any: 'Any status', options: [
+    { value: 'active', label: 'Active' }, { value: 'disabled', label: 'Disabled' }] },
+  { key: 'provider', label: 'Sign-in method', any: 'Any sign-in', options: [
+    { value: 'native', label: 'Password' }, { value: 'google', label: 'Google' },
+    { value: 'github', label: 'GitHub' }, { value: 'facebook', label: 'Facebook' }] },
+];
+const FILTER_KEYS = FILTERS.map(f => f.key);
 
 export default {
   name: 'AdminUsers',
   components: {
-    Search, ChevronDown, ChevronRight, ChevronLeft, X, Users, CircleAlert,
-    UserDetailPane, SkeletonRows, EmptyState, StatusBadge,
+    ErrorAlert, Search, ChevronDown, ChevronRight, ChevronLeft, X, Users, UserPlus,
+    UserDetailPane, NewUserSheet, SkeletonRows, EmptyState, StatusBadge,
   },
   data() {
     return {
@@ -137,31 +155,22 @@ export default {
       totalPages: 1,
       loading: true,
       error: '',
+      creating: false,
       search: this.$route.query.q || '',
       searchTimer: null,
-      filterDefs: [
-        { key: 'role', label: 'Role', any: 'Any role', options: [
-          { value: 'user', label: 'User' }, { value: 'admin', label: 'Admin' }, { value: 'root', label: 'Root' }] },
-        { key: 'status', label: 'Status', any: 'Any status', options: [
-          { value: 'active', label: 'Active' }, { value: 'disabled', label: 'Disabled' }] },
-        { key: 'provider', label: 'Sign-in method', any: 'Any sign-in', options: [
-          { value: 'native', label: 'Password' }, { value: 'google', label: 'Google' },
-          { value: 'github', label: 'GitHub' }, { value: 'facebook', label: 'Facebook' }] },
-      ],
     };
   },
   computed: {
     // List state lives in the URL so back, reload of a link and sharing restore it.
     selectedId() { return this.$route.params.id || null; },
     page() { return Number(this.$route.query.page) || 1; },
+    filterDefs() { return FILTERS; },
     filters() {
       return Object.fromEntries(FILTER_KEYS.map(key => [key, this.$route.query[key] || '']));
     },
     hasFilters() { return FILTER_KEYS.some(key => this.filters[key]); },
-    listQuery() {
-      const { q, page, role, status, provider } = this.$route.query;
-      return JSON.stringify({ q, page, role, status, provider });
-    },
+    // Everything that changes the list (not the open user) refetches it.
+    listQuery() { return JSON.stringify([this.$route.query.q, this.page, this.filters]); },
   },
   watch: {
     listQuery() { this.loadUsers(); },
@@ -220,7 +229,12 @@ export default {
       if (window.history.state?.back?.startsWith('/admin/users')) this.$router.back();
       else this.$router.replace({ name: 'AdminUsers', params: {}, query: this.$route.query });
     },
-    providerLabel: providerName,
+    providerName,
+    async onCreated(user) {
+      this.creating = false;
+      await this.loadUsers();
+      this.$router.push({ name: 'AdminUsers', params: { id: user.id }, query: this.$route.query });
+    },
   },
 };
 </script>
@@ -260,27 +274,4 @@ export default {
 .chip-select select:focus-visible { outline: none; }
 .chip-select:has(select:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
 .chip-select svg { position: absolute; right: 10px; pointer-events: none; }
-
-.row-meta { display: flex; align-items: center; gap: var(--space-sm); margin-top: 6px; flex-wrap: wrap; }
-
-.user-cell { gap: 12px; }
-.chevron-cell { width: 40px; text-align: right; }
-
-.dimmed { opacity: 0.55; transition: opacity var(--transition-fast); }
-
-.only-wide { display: none; }
-
-@media (min-width: 1024px) {
-  .only-narrow { display: none; }
-  .only-wide { display: table; }
-}
-
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
-  border-top: 1px solid var(--border);
-}
 </style>

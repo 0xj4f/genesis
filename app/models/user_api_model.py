@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, SecretStr, Field, AfterValidator, field_validator
+from pydantic import BaseModel, EmailStr, SecretStr, Field, AfterValidator, field_validator, model_validator
 from typing import Annotated
 from typing import Optional
 import re
@@ -96,6 +96,9 @@ class User(BaseModel):
     last_modified: Optional[datetime] = None
     # True when an email change waits for the new address to be verified.
     email_change_pending: bool = False
+    # Temporary password: the user must choose a new one before continuing.
+    must_change_password: bool = False
+    password_expires_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -123,12 +126,27 @@ class PasswordChangeRequest(BaseModel):
 
 
 class AdminPasswordReset(BaseModel):
-    new_password: SecretStr
+    """Set another account's password: give new_password, or generate=true for
+    a Genesis-generated one. Generated passwords are always temporary."""
+    new_password: Optional[SecretStr] = None
+    generate: bool = False
+    require_password_change: bool = True
 
     @field_validator("new_password", mode="before")
     @classmethod
     def validate_new_password(cls, password):
-        return _validated_secret(password)
+        return None if password in (None, "") else _validated_secret(password)
+
+    @model_validator(mode="after")
+    def exactly_one_source(self):
+        if self.generate == (self.new_password is not None):
+            raise ValueError("Provide new_password or set generate to true (not both)")
+        return self
+
+
+class PasswordResetRequest(BaseModel):
+    """A signed-out user asking an administrator for a password reset."""
+    identifier: str = Field(min_length=1, max_length=255)
 
 
 class EmailVerifyRequest(BaseModel):

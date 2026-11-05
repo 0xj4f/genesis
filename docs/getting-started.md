@@ -11,6 +11,9 @@
 git clone <repo-url> genesis
 cd genesis
 
+# Generate the local ROOT password once (stored in secrets/local.env, gitignored)
+scripts/fetch-credentials.sh
+
 # Start the stack (MySQL + API)
 docker compose up -d
 
@@ -18,12 +21,28 @@ docker compose up -d
 docker compose logs -f api
 ```
 
-The API starts on **port 8001** (mapped from container port 8000). MySQL runs on port 3306.
+The API starts on **port 8001** (mapped from container port 8000). MySQL is published on `127.0.0.1:3307` (container port 3306); set `DB_HOST_PORT` to use another host port.
 
 On first start, the entrypoint script:
 1. Generates RSA key pair (if not present in `./secrets/`)
 2. Runs Alembic migrations (creates all 7 tables)
 3. Starts the FastAPI server
+
+### Admin credentials
+
+`scripts/fetch-credentials.sh` keeps the local ROOT (`adam`) password in `secrets/local.env`
+(gitignored, mode 600). `docker-compose.yml` passes it to the API as `BOOTSTRAP_ROOT_PASSWORD`, so
+adam is created with it on a fresh database. It is for local and dev stacks only; production sets
+its own value in `docker-compose.prod.yml`.
+
+| Command | What it does |
+|---------|--------------|
+| `scripts/fetch-credentials.sh` | Prints the admin URL, username and password; checks the sign-in works |
+| `scripts/fetch-credentials.sh --sync` | Applies the stored password to an existing database (the seed only sets it when it creates adam) |
+| `scripts/fetch-credentials.sh --rotate` | Generates a new password, applies it, then stores it |
+| `scripts/fetch-credentials.sh --from-logs` | Shows the random password the seed logged when no file was present |
+
+`--sync` and `--rotate` sign adam out of every session.
 
 ### Verify it's running
 

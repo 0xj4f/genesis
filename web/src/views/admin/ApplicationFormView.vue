@@ -16,11 +16,7 @@
       </div>
     </div>
 
-    <div v-if="loadError" class="alert alert-error" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ loadError }}</div>
-      <button class="btn btn-secondary btn-sm" @click="load">Retry</button>
-    </div>
+    <ErrorAlert v-if="loadError" :message="loadError" @retry="load" />
 
     <div v-else-if="loading" class="card stack" aria-busy="true">
       <span class="skeleton" style="height: 14px; width: 30%;"></span>
@@ -192,6 +188,7 @@
 <script>
 import { ChevronLeft, CircleAlert, Plus, Trash2, RefreshCw } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import CopyButton from '@/components/ui/CopyButton.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
 import TokenInput from '@/components/ui/TokenInput.vue';
@@ -223,7 +220,7 @@ function toPayload(form) {
 
 export default {
   name: 'ApplicationForm',
-  components: { ChevronLeft, CircleAlert, Plus, Trash2, RefreshCw, CopyButton, StatusBadge, TokenInput, SecretRevealDialog },
+  components: { ErrorAlert, ChevronLeft, CircleAlert, Plus, Trash2, RefreshCw, CopyButton, StatusBadge, TokenInput, SecretRevealDialog },
   data() {
     return {
       original: null,
@@ -280,7 +277,17 @@ export default {
     this.load();
   },
   async beforeRouteLeave() {
-    if (this.leaving || !this.dirty || this.reveal.secret) return true;
+    // A lost session redirects to sign-in; nothing here can be saved anyway.
+    if (!this.$store.getters.isAdminAuthenticated) return true;
+    if (this.reveal.secret) {
+      return confirmAction({
+        title: 'Leave without the client secret?',
+        message: "It's shown only once. If you leave now, you'll need to rotate it to get a new one.",
+        confirmLabel: 'Leave anyway',
+        danger: true,
+      });
+    }
+    if (this.leaving || !this.dirty) return true;
     return confirmAction({
       title: 'Discard unsaved changes?',
       message: 'Your edits to this application will be lost.',
@@ -430,18 +437,6 @@ export default {
 .card + .card { margin-top: 0; }
 
 fieldset { border: none; }
-
-.secret-box {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: 8px 6px 8px 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.secret-box code { flex: 1; font-size: var(--text-sm); }
 
 .secret-row {
   display: flex;

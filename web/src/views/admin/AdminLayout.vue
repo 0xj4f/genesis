@@ -10,7 +10,10 @@
       <nav class="sidebar-nav" aria-label="Admin sections">
         <router-link v-for="item in nav" :key="item.to" :to="item.to" class="sidebar-link"
                      :class="{ 'is-active': isActive(item) }" :aria-current="isActive(item) ? 'page' : undefined">
-          <component :is="item.icon" :size="18" aria-hidden="true" />{{ item.label }}
+          <component :is="item.icon" :size="18" aria-hidden="true" />
+          <span class="spacer">{{ item.label }}</span>
+          <span v-if="badgeFor(item)" class="nav-badge tabular" aria-hidden="true">{{ badgeFor(item) }}</span>
+          <span v-if="badgeFor(item)" class="sr-only">, {{ badgeFor(item) }} open</span>
         </router-link>
       </nav>
       <div class="sidebar-foot">
@@ -48,7 +51,12 @@
     <nav class="tabbar admin-tabbar" aria-label="Admin sections">
       <router-link v-for="item in nav" :key="item.to" :to="item.to" :class="{ 'is-active': isActive(item) }"
                    :aria-current="isActive(item) ? 'page' : undefined">
-        <component :is="item.icon" :size="22" aria-hidden="true" />{{ item.short || item.label }}
+        <span class="tab-icon">
+          <component :is="item.icon" :size="22" aria-hidden="true" />
+          <span v-if="badgeFor(item)" class="tab-badge tabular" aria-hidden="true">{{ badgeFor(item) }}</span>
+        </span>
+        {{ item.short || item.label }}
+        <span v-if="badgeFor(item)" class="sr-only">, {{ badgeFor(item) }} open</span>
       </router-link>
     </nav>
   </div>
@@ -56,10 +64,13 @@
 
 <script>
 import { mapActions, mapState } from 'vuex';
-import { LayoutDashboard, Users, AppWindow, LogOut } from 'lucide-vue-next';
+import { LayoutDashboard, Users, Inbox, AppWindow, LogOut } from 'lucide-vue-next';
 import BrandMark from '@/components/ui/BrandMark.vue';
 import AccountMenu from '@/components/ui/AccountMenu.vue';
 import ThemeToggle from '@/components/ui/ThemeToggle.vue';
+import { requestCounts, refreshRequestCount } from '@/utils/adminRequests';
+
+const REQUEST_POLL_MS = 60000;
 
 export default {
   name: 'AdminLayout',
@@ -69,10 +80,24 @@ export default {
       nav: [
         { to: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
         { to: '/admin/users', label: 'Users', icon: Users },
+        { to: '/admin/requests', label: 'Requests', icon: Inbox, badge: 'requests' },
         { to: '/admin/applications', label: 'Applications', short: 'Apps', icon: AppWindow },
       ],
+      counts: requestCounts,
+      pollTimer: null,
     };
   },
+  watch: {
+    // Section changes only; opening or closing a detail sheet doesn't refetch.
+    '$route.name'() { refreshRequestCount(); },
+  },
+  created() {
+    refreshRequestCount();
+    this.pollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshRequestCount();
+    }, REQUEST_POLL_MS);
+  },
+  beforeUnmount() { clearInterval(this.pollTimer); },
   computed: {
     ...mapState(['adminUser']),
     adminName() { return this.adminUser?.username || 'Administrator'; },
@@ -81,6 +106,10 @@ export default {
   },
   methods: {
     ...mapActions(['adminLogout']),
+    badgeFor(item) {
+      if (item.badge !== 'requests' || !this.counts.open) return '';
+      return this.counts.open > 99 ? '99+' : String(this.counts.open);
+    },
     isActive(item) {
       const path = this.$route.path;
       return item.exact ? path === item.to || path === `${item.to}/` : path.startsWith(item.to);
@@ -144,6 +173,22 @@ export default {
 }
 
 .sidebar-link:hover { background: var(--surface-hover); color: var(--text); }
+
+.nav-badge,
+.tab-badge {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--danger-solid);
+  color: var(--on-solid);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.tab-icon { position: relative; display: flex; }
+.tab-badge { position: absolute; top: -6px; left: 14px; border: 2px solid var(--surface); line-height: 14px; }
 .sidebar-link.is-active { background: var(--surface-2); color: var(--text); }
 .sidebar-link.is-active svg { color: var(--primary-text); }
 

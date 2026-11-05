@@ -19,6 +19,19 @@ const routes = [
     meta: { guest: true },
   },
   {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/ForgotPasswordView.vue'),
+    meta: { guest: true },
+  },
+  {
+    // Forced change after signing in with a temporary password.
+    path: '/password/change',
+    name: 'ChangePassword',
+    component: () => import('@/views/ChangePasswordView.vue'),
+    meta: { requiresAuth: true, bare: true, kind: 'user' },
+  },
+  {
     path: '/sso/callback',
     name: 'SSOCallback',
     component: () => import('@/views/SSOCallbackView.vue'),
@@ -64,6 +77,12 @@ const routes = [
     meta: { adminGuest: true },
   },
   {
+    path: '/admin/change-password',
+    name: 'AdminChangePassword',
+    component: () => import('@/views/ChangePasswordView.vue'),
+    meta: { requiresAdmin: true, kind: 'admin' },
+  },
+  {
     path: '/admin',
     component: () => import('@/views/admin/AdminLayout.vue'),
     meta: { requiresAdmin: true },
@@ -78,6 +97,11 @@ const routes = [
         path: 'users/:id?',
         name: 'AdminUsers',
         component: () => import('@/views/admin/UsersView.vue'),
+      },
+      {
+        path: 'requests/:id?',
+        name: 'AdminRequests',
+        component: () => import('@/views/admin/RequestsView.vue'),
       },
       {
         path: 'applications',
@@ -109,7 +133,7 @@ const router = createRouter({
   scrollBehavior(to, from, saved) {
     if (saved) return saved;
     // Opening or closing a user keeps the list where it was.
-    if (to.name === from.name && to.name === 'AdminUsers') return false;
+    if (to.name === from.name && ['AdminUsers', 'AdminRequests'].includes(to.name)) return false;
     return { top: 0 };
   },
 });
@@ -130,6 +154,15 @@ router.beforeEach((to, from, next) => {
   }
   if (to.meta.adminGuest && isAdmin) {
     return next('/admin');
+  }
+  // A temporary password must be replaced before anything else.
+  // The original destination rides along so the user ends up there afterwards.
+  if (isAuth && to.meta.requiresAuth && store.getters.currentUser?.must_change_password && to.name !== 'ChangePassword') {
+    return next({ name: 'ChangePassword', query: { next: to.fullPath } });
+  }
+  if (isAdmin && to.matched.some(record => record.meta.requiresAdmin)
+      && store.state.adminUser?.must_change_password && to.name !== 'AdminChangePassword') {
+    return next({ name: 'AdminChangePassword', query: { next: to.fullPath } });
   }
   next();
 });

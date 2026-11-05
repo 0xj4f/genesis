@@ -23,7 +23,10 @@
                autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" required />
       </div>
       <div class="form-group">
-        <label for="password">Password</label>
+        <div class="label-row">
+          <label for="password" class="form-label">Password</label>
+          <router-link to="/forgot-password" class="link text-md">Forgot password?</router-link>
+        </div>
         <PasswordInput id="password" v-model="password" autocomplete="current-password" required
                        :invalid="!!error" :describedby="error ? 'login-error' : ''" />
       </div>
@@ -91,9 +94,11 @@ export default {
       this.notice = '';
       this.needsVerification = false;
       this.loading = true;
+      // Read before signing in: a temporary password can redirect while it loads.
+      const next = safeNextPath(this.$route.query.next) || '/profile';
       try {
         await this.login({ username: this.username, password: this.password });
-        this.$router.replace(safeNextPath(this.$route.query.next) || '/profile');
+        this.$router.replace(next);
       } catch (e) {
         this.error = e.message;
         this.needsVerification = e.status === 403 && e.message === 'Email address not verified';
@@ -120,3 +125,7 @@ export default {
   },
 };
 </script>
+
+<style scoped>
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-md); }
+</style>

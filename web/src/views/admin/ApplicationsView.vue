@@ -10,11 +10,7 @@
       </router-link>
     </div>
 
-    <div v-if="error" class="alert alert-error mb-md" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <div class="spacer">{{ error }}</div>
-      <button class="btn btn-secondary btn-sm" @click="load">Retry</button>
-    </div>
+    <ErrorAlert v-if="error" :message="error" class="mb-md" @retry="load" />
 
     <div v-if="loading" class="card card-flush"><SkeletonRows :rows="3" /></div>
 
@@ -59,8 +55,9 @@
 </template>
 
 <script>
-import { Plus, AppWindow, ChevronRight, CircleAlert } from 'lucide-vue-next';
+import { Plus, AppWindow, ChevronRight } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
 import SkeletonRows from '@/components/ui/SkeletonRows.vue';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import StatusBadge from '@/components/ui/StatusBadge.vue';
@@ -69,7 +66,7 @@ import { GRANT_TYPES } from '@/utils/oauth';
 
 export default {
   name: 'AdminApplications',
-  components: { Plus, AppWindow, ChevronRight, CircleAlert, SkeletonRows, EmptyState, StatusBadge, CopyButton },
+  components: { ErrorAlert, Plus, AppWindow, ChevronRight, SkeletonRows, EmptyState, StatusBadge, CopyButton },
   data() {
     return { clients: [], loading: true, error: '' };
   },

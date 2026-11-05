@@ -30,6 +30,11 @@ class User(Base):
     last_login_method = Column(String(20), nullable=True)  # password, google, github, facebook
     role = Column(String(20), nullable=False, default="user")  # user, admin, root
 
+    # Temporary (admin-issued) passwords: the user must choose a new password
+    # before using the account, and the temporary one stops working at expiry.
+    must_change_password = Column(Boolean, nullable=False, default=False)
+    password_expires_at = Column(DateTime, nullable=True)
+
     # Relationships
     profile = relationship("Profile", uselist=False, back_populates="user")
     oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")

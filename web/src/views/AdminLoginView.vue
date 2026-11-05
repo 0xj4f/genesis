@@ -55,9 +55,9 @@ export default {
     async handleLogin() {
       this.error = '';
       this.loading = true;
+      const next = safeNextPath(this.$route.query.next);
       try {
         await this.adminLogin({ username: this.username, password: this.password });
-        const next = safeNextPath(this.$route.query.next);
         this.$router.replace(next?.startsWith('/admin/') ? next : '/admin');
       } catch (e) {
         this.error = e.message;

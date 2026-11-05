@@ -40,7 +40,17 @@ def authenticate_user(db: Session, username: str, password: str):
         security_event("login_failed", subject=subject_hash(username))
         return False
     record_success(key)
+    if temporary_password_expired(user):
+        security_event("temporary_password_expired", user_id=str(user.id))
+        raise HTTPException(status_code=401, detail=TEMPORARY_PASSWORD_EXPIRED)
     return user
+
+
+TEMPORARY_PASSWORD_EXPIRED = "This temporary password has expired. Ask an administrator for a new one."
+
+
+def temporary_password_expired(user) -> bool:
+    return bool(user.must_change_password and user.password_expires_at and user.password_expires_at < datetime.utcnow())
 
 
 def enforce_email_verified(user) -> None:
@@ -49,12 +59,25 @@ def enforce_email_verified(user) -> None:
         raise HTTPException(status_code=403, detail="Email address not verified")
 
 
-def build_user_claims(user, *, sid: str, auth_method: str, scope: str = "openid profile email") -> dict:
+# Tokens for an account holding a temporary password carry only this audience
+# and scope: relying parties (which expect OAUTH_DEFAULT_AUDIENCE) and the rest of
+# this API refuse them, so they are good for nothing but replacing the password.
+PASSWORD_CHANGE_AUDIENCE = "genesis-password-change"
+PASSWORD_CHANGE_SCOPE = "password_change"
+DEFAULT_SCOPE = "openid profile email"
+
+
+def build_user_claims(user, *, sid: str, auth_method: str, scope: str = DEFAULT_SCOPE) -> dict:
     """Claims shared by every user token, whichever way the user signed in.
 
     `role` is read by relying parties (gen-commerce) that validate tokens offline;
     it can be stale for up to the access-token lifetime after a role change.
     """
+    if user.must_change_password:
+        restricted = {"aud": [PASSWORD_CHANGE_AUDIENCE], "scope": PASSWORD_CHANGE_SCOPE}
+    else:
+        # A refresh after the change carries the restricted scope forward; drop it.
+        restricted = {"scope": DEFAULT_SCOPE} if scope == PASSWORD_CHANGE_SCOPE else {}
     return {
         "sub": str(user.id),
         "username": user.username,
@@ -64,6 +87,7 @@ def build_user_claims(user, *, sid: str, auth_method: str, scope: str = "openid 
         "scope": scope,
         "sid": sid,
         "role": user.role,
+        **restricted,
     }
 
 
@@ -103,12 +127,13 @@ def create_refresh_token(data: dict) -> tuple[str, str]:
     return create_token(data, timedelta(days=settings.OAUTH_REFRESH_TOKEN_TTL_DAYS), token_type="refresh")
 
 
-def decode_token(token: str, expected_type: str = "access") -> dict:
+def decode_token(token: str, expected_type: str = "access", allow_password_change: bool = False) -> dict:
     """Decode and validate a JWT token.
 
     Args:
         token: The JWT string
         expected_type: "access" or "refresh" - validates token_type claim
+        allow_password_change: also accept PASSWORD_CHANGE_AUDIENCE tokens
     """
     try:
         # Decode header to get kid
@@ -127,7 +152,10 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
             token,
             key,
             algorithms=[algorithm],
-            audience=settings.OAUTH_DEFAULT_AUDIENCE,
+            audience=(
+                [settings.OAUTH_DEFAULT_AUDIENCE, PASSWORD_CHANGE_AUDIENCE] if allow_password_change
+                else settings.OAUTH_DEFAULT_AUDIENCE
+            ),
             issuer=settings.OAUTH_ISSUER,
             options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]},
         )
@@ -144,15 +172,22 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def _authenticate_access_token(token: str, db: Session):
-    """Validate an access token and its session. Returns (user, claims, session)."""
+PASSWORD_CHANGE_REQUIRED = "Password change required"
+
+
+def _authenticate_access_token(token: str, db: Session, allow_pending_password_change: bool = False):
+    """Validate an access token and its session. Returns (user, claims, session).
+
+    While an account holds a temporary password, only the endpoints that let the
+    user replace it (or sign out) accept its tokens.
+    """
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(token=token, expected_type="access")
+    payload = decode_token(token=token, expected_type="access", allow_password_change=True)
     user_id: str = payload.get("sub")
 
     if user_id is None:
@@ -165,6 +200,9 @@ def _authenticate_access_token(token: str, db: Session):
     if user.disabled or not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
     session = validate_access_session(db, payload)
+    restricted_token = PASSWORD_CHANGE_AUDIENCE in payload.get("aud", [])
+    if (user.must_change_password or restricted_token) and not allow_pending_password_change:
+        raise HTTPException(status_code=403, detail=PASSWORD_CHANGE_REQUIRED)
     return user, payload, session
 
 
@@ -179,6 +217,17 @@ def current_user_with_claims(token: str = Depends(oauth2_scheme), db: Session = 
     """Like oauth_authenticate_current_user, but also returns (claims, session)
     for endpoints that need the session id or sign-in time."""
     return _authenticate_access_token(token, db)
+
+
+def oauth_authenticate_pending_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """Like oauth_authenticate_current_user, but also accepts accounts that must
+    change a temporary password. Only for reading your own account and signing out."""
+    return _authenticate_access_token(token, db, allow_pending_password_change=True)[0]
+
+
+def current_user_with_claims_pending(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """current_user_with_claims for the password-change endpoint itself."""
+    return _authenticate_access_token(token, db, allow_pending_password_change=True)
 
 
 def validate_access_session(db: Session, payload: dict):
@@ -205,6 +254,8 @@ def require_reauth(db: Session, user, session, current_password) -> None:
     if user.password:
         if not current_password:
             raise HTTPException(status_code=400, detail="current_password is required")
+        if temporary_password_expired(user):
+            raise HTTPException(status_code=401, detail=TEMPORARY_PASSWORD_EXPIRED)
         key = login_key(user.username)
         ensure_attempt_allowed(key)
         valid, upgraded_hash = verify_and_update_password(current_password.get_secret_value(), user.password)

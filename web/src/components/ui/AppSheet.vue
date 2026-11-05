@@ -1,5 +1,6 @@
 <template>
-  <dialog ref="dialog" class="sheet" :aria-label="title" @cancel.prevent="$emit('close')" @click="onBackdrop">
+  <dialog ref="dialog" class="sheet" :aria-label="title" @cancel.prevent="$emit('close')" @close="onClose"
+          @click="onBackdrop">
     <div class="sheet-panel">
       <header class="sheet-header">
         <button class="btn btn-ghost btn-icon sheet-back" aria-label="Close" @click="$emit('close')">
@@ -43,6 +44,10 @@ export default {
       if (open && !dialog.open) dialog.showModal();
       if (!open && dialog.open) dialog.close();
       document.documentElement.style.overflow = open ? 'hidden' : '';
+    },
+    // The browser can close the dialog itself (repeated Esc in Chromium).
+    onClose() {
+      if (this.open) this.$emit('close');
     },
     onBackdrop(event) {
       if (event.target === this.$refs.dialog) this.$emit('close');

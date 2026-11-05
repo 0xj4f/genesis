@@ -38,11 +38,18 @@ function withBearer(options, token) {
 
 // Authenticated request for the 'user' or 'admin' session. On 401 the session
 // is refreshed once (shared between concurrent calls) and the call retried.
+// A 403 "Password change required" means the account holds a temporary
+// password: the store sends the user to the change-password page.
+const PASSWORD_CHANGE_REQUIRED = 'Password change required';
+
 async function authed(kind, path, options = {}) {
   const token = authHandler?.token(kind);
   try {
     return await send(path, withBearer(options, token));
   } catch (error) {
+    if (error.status === 403 && error.message === PASSWORD_CHANGE_REQUIRED) {
+      authHandler?.passwordChangeRequired?.(kind);
+    }
     if (error.status !== 401 || !authHandler) throw error;
     const freshToken = await authHandler.refresh(kind);
     if (!freshToken) throw error;
@@ -110,10 +117,16 @@ export default {
     return authed('user', `/users/${id(userId)}`, json('PUT', data));
   },
 
-  changePassword(currentPassword, newPassword) {
+  // kind: 'user', or 'admin' for the admin console's own session.
+  changePassword(currentPassword, newPassword, kind = 'user') {
     const body = { new_password: newPassword };
     if (currentPassword) body.current_password = currentPassword;
-    return authed('user', '/users/me/password', json('POST', body));
+    return authed(kind, '/users/me/password', json('POST', body));
+  },
+
+  // Signed-out "forgot password": queues a request for an administrator.
+  requestPasswordReset(identifier) {
+    return send('/auth/password-reset-requests', json('POST', { identifier }));
   },
 
   // ---- Profile ----
@@ -220,8 +233,40 @@ export default {
     return authed('admin', `/admin/users/${id(userId)}/disable`, { method: 'POST' });
   },
 
-  adminResetPassword(userId, newPassword) {
-    return authed('admin', `/admin/users/${id(userId)}/password`, json('POST', { new_password: newPassword }));
+  // Either generate a temporary password (returned once) or set newPassword.
+  adminResetPassword(userId, { newPassword, generate = false, requirePasswordChange = true }) {
+    const body = generate
+      ? { generate: true }
+      : { new_password: newPassword, require_password_change: requirePasswordChange };
+    return authed('admin', `/admin/users/${id(userId)}/password`, json('POST', body));
+  },
+
+  // Without data.password a temporary password is generated and returned once.
+  createAdminUser(data) {
+    return authed('admin', '/admin/users', json('POST', data));
+  },
+
+  // ---- Admin: account requests ----
+  getRequests({ status = 'open', category = '', page = 1, perPage = 20 } = {}) {
+    const params = new URLSearchParams({ status, page, per_page: perPage });
+    if (category) params.set('category', category);
+    return authed('admin', `/admin/requests?${params}`);
+  },
+
+  getRequest(requestId) {
+    return authed('admin', `/admin/requests/${id(requestId)}`);
+  },
+
+  getRequestSummary() {
+    return authed('admin', '/admin/requests/summary');
+  },
+
+  issueRequestPassword(requestId) {
+    return authed('admin', `/admin/requests/${id(requestId)}/temporary-password`, { method: 'POST' });
+  },
+
+  dismissRequest(requestId) {
+    return authed('admin', `/admin/requests/${id(requestId)}/dismiss`, { method: 'POST' });
   },
 
   adminDeleteUser(userId) {

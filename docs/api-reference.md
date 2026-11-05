@@ -391,9 +391,30 @@ Generate a new client secret. The old secret is immediately invalidated.
 | `GET /auth/config` | No | `{ email_verification, sso_providers }` for the web app |
 | `POST /auth/email/verify` | No | `{ token }` from the email link; single use, expires |
 | `POST /auth/email/resend` | No | `{ email }`; always `202` so accounts are not revealed |
-| `POST /admin/users/{id}/password` | Admin | `{ new_password }`; admins for regular users, ROOT for admins; revokes the user's sessions |
+| `POST /admin/users/{id}/password` | Admin | `{ new_password }` or `{ generate: true }` (see temporary passwords below); admins for regular users, ROOT for admins; revokes the user's sessions |
 | `POST /oauth/authorize` | Yes | Consent decision from the web app; returns `{ redirect_to }` |
 | `GET /oauth/clients/{id}/public` | No | Client name and scopes for the consent screen |
 
 Login endpoints (`/token`, `/admin/login`) can now return `429` (account temporarily locked after repeated
 failures) and, with `EMAIL_VERIFY=true`, `403 Email address not verified`.
+
+## Temporary passwords and reset requests
+
+There is no email delivery yet, so administrators hand out temporary passwords themselves.
+
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `POST /admin/users` | Admin | `{ username, email, role?, password?, require_password_change?, email_verified? }`. Without `password` a temporary one is generated and returned once as `temporary_password`. Admins create `user` accounts; ROOT may also create `admin`; nobody creates `root`. Returns `201` |
+| `POST /admin/users/{id}/password` | Admin | `{ generate: true }` returns a generated `temporary_password`; `{ new_password, require_password_change }` sets one (temporary unless `require_password_change` is `false`). Resolves the user's open reset request |
+| `POST /auth/password-reset-requests` | No | `{ identifier }` (username or email). Always `202` with the same body; queues a request for an administrator when an account matches (never for ROOT) |
+| `GET /admin/requests` | Admin | `?status=open\|resolved\|dismissed&category=password_reset&page=&per_page=`; only requests for accounts the caller may manage |
+| `GET /admin/requests/summary` | Admin | `{ open }`, for the console badge |
+| `POST /admin/requests/{id}/temporary-password` | Admin | Generates a temporary password for the request's user and resolves it |
+| `POST /admin/requests/{id}/dismiss` | Admin | Closes the request without changing the account |
+
+A temporary password works for `TEMPORARY_PASSWORD_TTL_HOURS` (default 72); after that `/token` and
+`/admin/login` return `401`. While an account holds one (`must_change_password: true` on `GET /users/me/`),
+every other endpoint returns `403 Password change required` except `GET /users/me/`,
+`POST /users/me/password` (send the temporary password as `current_password`) and
+`DELETE /auth/sessions/{id}`. Changing the password clears the flag.
+

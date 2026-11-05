@@ -33,10 +33,6 @@ export function shortDate(value) {
   });
 }
 
-export function capitalize(value) {
-  return value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
-}
-
 export function formatNumber(value) {
   return typeof value === 'number' ? value.toLocaleString() : '—';
 }
