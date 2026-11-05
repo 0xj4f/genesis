@@ -19,6 +19,7 @@ from app.main import app
 from app.database.session import Base, get_db
 from app.models.user_db_model import User
 from app.middleware import security
+from app.services import account_request_service
 from app.utils.security_store import MemorySecurityStore
 
 
@@ -54,12 +55,14 @@ def db(sessions):
 
 
 @pytest.fixture
-def client(sessions, store):
+def client(sessions, store, monkeypatch):
     def override_db():
         with sessions() as session:
             yield session
 
     app.dependency_overrides[get_db] = override_db
+    # Background tasks open their own sessions.
+    monkeypatch.setattr(account_request_service, "SessionLocal", sessions)
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

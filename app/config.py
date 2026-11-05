@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     # SSO-only accounts (no password) must have signed in this recently to set
     # a first password or change their email.
     REAUTH_MAX_AGE_SECONDS: int = Field(600, ge=60, le=3600)
+    # How long an admin-issued temporary password works before it must be reissued.
+    TEMPORARY_PASSWORD_TTL_HOURS: int = Field(72, ge=1, le=720)
 
     # Base URL of the Genesis web app. Used for the SSO hand-off redirect, email
     # links and the OAuth consent page. Optional: without it SSO callbacks

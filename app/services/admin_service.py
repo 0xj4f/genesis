@@ -1,7 +1,9 @@
 """Admin service: analytics, user management, role assignment."""
 
 import math
+import secrets
 from fastapi import HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from datetime import datetime
 from uuid import uuid4
@@ -16,12 +18,16 @@ from app.database.user_db_interface import (
     get_user_analytics_db,
     set_user_password_db,
 )
+from app.database.account_request_db_interface import close_requests_db, get_open_request_db
+from app.models.account_request_db_model import PASSWORD_RESET
+from app.models.user_api_model import validate_password_strength
+from app.models.user_db_model import User
 from app.database.session_db_interface import revoke_all_user_sessions_db
 from app.utils.audit import security_event
 from app.utils.security import hash_password
 from app.database.profile_db_interface import get_profile_by_user_db
 from app.database.oauth_account_db_interface import get_oauth_accounts_by_user_db
-from app.database.session_db_interface import get_active_sessions_by_user_db
+from app.database.session_db_interface import count_active_sessions_by_user_db
 from app.services.session_service import create_session
 
 
@@ -57,8 +63,9 @@ def get_analytics(db: Session) -> dict:
     return get_user_analytics_db(db)
 
 
-def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: str = None) -> dict:
-    users, total = get_users_paginated_db(db, page, per_page, search)
+def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: str = None,
+                        **filters) -> dict:
+    users, total = get_users_paginated_db(db, page, per_page, search, **filters)
     total_pages = math.ceil(total / per_page) if total > 0 else 1
     return {
         "users": users,
@@ -76,7 +83,7 @@ def get_user_detail(db: Session, user_id: str) -> dict:
 
     profile = get_profile_by_user_db(db, user_id)
     oauth_accounts = get_oauth_accounts_by_user_db(db, user_id)
-    sessions = get_active_sessions_by_user_db(db, user_id)
+    pending = get_open_request_db(db, user_id, PASSWORD_RESET)
 
     profile_data = None
     if profile:
@@ -121,8 +128,12 @@ def get_user_detail(db: Session, user_id: str) -> dict:
         "created_at": user.created_at,
         "last_modified": user.last_modified,
         "profile": profile_data,
-        "sessions_count": len(sessions),
+        "sessions_count": count_active_sessions_by_user_db(db, user_id),
         "linked_providers": linked,
+        "must_change_password": user.must_change_password,
+        "password_expires_at": user.password_expires_at,
+        "pending_request_id": pending.id if pending else None,
+        "pending_password_reset_at": pending.last_requested_at if pending else None,
     }
 
 
@@ -148,8 +159,7 @@ def update_user_role(db: Session, user_id: str, new_role: str, actor) -> dict:
 
 
 def toggle_user_status(db: Session, user_id: str, actor) -> dict:
-    from app.models.user_db_model import User
-    user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
+    user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":
@@ -166,18 +176,83 @@ def toggle_user_status(db: Session, user_id: str, actor) -> dict:
     return {"message": f"User {status}", "disabled": user.disabled}
 
 
-def reset_user_password(db: Session, user_id: str, new_password: str, actor) -> dict:
-    """Administrator sets another user's password and signs them out everywhere."""
-    if str(actor.id) == user_id:
+# No look-alike characters (0/O, 1/l/I) so a password read out or retyped by hand survives.
+_TEMPORARY_PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+
+
+def generate_temporary_password() -> str:
+    """Four groups of four (about 92 bits), e.g. Kp7m-Qx3t-Zr9w-Hb2n!, meeting the password policy."""
+    while True:
+        groups = ("".join(secrets.choice(_TEMPORARY_PASSWORD_ALPHABET) for _ in range(4)) for _ in range(4))
+        candidate = "-".join(groups) + "!"
+        try:
+            return validate_password_strength(candidate)
+        except ValueError:
+            continue
+
+
+def issue_password(db: Session, actor, user, new_password: str = None, require_change: bool = True) -> dict:
+    """Administrator sets (or generates) another account's password.
+
+    Generated passwords are always temporary: the user must replace them at the
+    next sign-in. The user is signed out everywhere, and an open password-reset
+    request for them is marked resolved.
+    """
+    if str(actor.id) == str(user.id):
         raise HTTPException(status_code=400, detail="Use POST /users/me/password to change your own password")
+    ensure_can_manage(actor, user, "reset_password")
+    generated = new_password is None
+    password = generate_temporary_password() if generated else new_password
+    temporary = generated or require_change
+    try:
+        password_hash = hash_password(password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    close_requests_db(db, str(user.id), PASSWORD_RESET, "resolved", str(actor.id))
+    set_user_password_db(db, user, password_hash, reason="admin_password_reset", temporary=temporary)
+    security_event(
+        "temporary_password_issued" if temporary else "password_reset_by_admin",
+        actor=str(actor.id), target=str(user.id), generated=generated,
+    )
+    return {
+        "message": "Password set. The user was signed out of all sessions.",
+        "username": user.username,
+        "role": user.role,
+        "must_change_password": user.must_change_password,
+        "password_expires_at": user.password_expires_at,
+        "temporary_password": password if generated else None,
+    }
+
+
+def reset_user_password(db: Session, user_id: str, actor, new_password: str = None, require_change: bool = True) -> dict:
+    """Administrator sets another user's password and signs them out everywhere."""
     user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    ensure_can_manage(actor, user, "reset_password")
+    return issue_password(db, actor, user, new_password, require_change)
+
+
+def create_user_by_admin(db: Session, actor, body) -> dict:
+    """Create a password account from the console. Admins create regular users;
+    root may also create admins. Nobody creates root accounts here."""
+    from app.services.user_service import validate_existing_user
+
+    if body.role != "user" and actor.role != "root":
+        deny(actor, "create_user")
+    validate_existing_user(db, email=body.email, username=body.username)
+    now = datetime.utcnow()
+    user = User(
+        username=body.username, email=body.email, role=body.role,
+        auth_provider="native", is_native=True,
+        email_verified=body.email_verified, email_verified_at=now if body.email_verified else None,
+    )
+    db.add(user)
     try:
-        password_hash = hash_password(new_password)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    set_user_password_db(db, user, password_hash, reason="admin_password_reset")
-    security_event("password_reset_by_admin", actor=str(actor.id), target=user_id)
-    return {"message": "Password reset. The user was signed out of all sessions."}
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered or username already taken")
+    security_event("user_created_by_admin", actor=str(actor.id), target=str(user.id), role=body.role)
+    password = body.password.get_secret_value() if body.password else None
+    result = issue_password(db, actor, user, password, body.require_password_change)
+    return {**result, "message": "User created.", "user": user}

@@ -80,7 +80,8 @@ def refresh_access_token_service(
     only be redeemed at /oauth/token by that client (with its secret when it is
     confidential). First-party refresh tokens are redeemed at /refresh_token.
     """
-    payload = decode_token(refresh_token, expected_type="refresh")
+    # A temporary-password session may refresh; the new claims follow the account.
+    payload = decode_token(refresh_token, expected_type="refresh", allow_password_change=True)
 
     user_id = payload.get("sub")
     jti = payload.get("jti")

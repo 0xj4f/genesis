@@ -65,6 +65,11 @@ def update_user_service(db: Session, target, user_update: UserUpdate, is_self: b
 def change_password_service(db: Session, user, session, request: PasswordChangeRequest):
     """Self-service password change: re-authenticate, store, sign out other sessions."""
     require_reauth(db, user, session, request.current_password)
+    if request.current_password and (
+        request.current_password.get_secret_value() == request.new_password.get_secret_value()
+    ):
+        # Otherwise a temporary password could simply be kept as the permanent one.
+        raise ValueError("Choose a password different from your current one")
     password_hash = hash_password(request.new_password.get_secret_value())
     return set_user_password_db(db, user, password_hash, reason="password_changed", keep_session_id=session.id)
 

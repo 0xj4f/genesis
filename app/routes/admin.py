@@ -4,7 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Literal, Optional
 
 from app.database.session import get_db
 from app.auth.auth import require_admin
@@ -19,11 +19,16 @@ from app.models.oauth_client_api_model import (
 )
 from app.models.admin_api_model import (
     AnalyticsResponse, AdminUserListResponse, AdminUserDetail, RoleUpdateRequest,
+    AdminUserCreate, AdminUserCreated, IssuedPassword,
+    AccountRequestItem, AccountRequestListResponse, AccountRequestSummary,
 )
 from app.models.user_api_model import Token, AdminPasswordReset
 from app.services.admin_service import (
     admin_login_service, get_analytics, get_users_paginated,
-    get_user_detail, update_user_role, toggle_user_status, reset_user_password,
+    get_user_detail, update_user_role, toggle_user_status, reset_user_password, create_user_by_admin,
+)
+from app.services.account_request_service import (
+    list_requests, get_request, request_summary, issue_password_for_request, dismiss_request,
 )
 from app.utils.security import hash_client_secret
 
@@ -56,10 +61,21 @@ def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, max_length=100),
+    role: Optional[Literal["user", "admin", "root"]] = None,
+    status: Optional[Literal["active", "disabled"]] = None,
+    provider: Optional[str] = Query(None, max_length=20),
+    sort: Literal["created", "last_login"] = "created",
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_users_paginated(db, page, per_page, search)
+    return get_users_paginated(db, page, per_page, search, role=role, status=status, provider=provider, sort=sort)
+
+
+@router.post("/admin/users", tags=["admin"], response_model=AdminUserCreated, status_code=201)
+def create_user(body: AdminUserCreate, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    """Create a password account. Without a password, a temporary one is
+    generated and returned once; the user must replace it at first sign-in."""
+    return create_user_by_admin(db, current_user, body)
 
 
 @router.get("/admin/users/{user_id}", tags=["admin"], response_model=AdminUserDetail)
@@ -82,14 +98,15 @@ def disable_user(user_id: str, current_user=Depends(require_admin), db: Session 
     return toggle_user_status(db, user_id, current_user)
 
 
-@router.post("/admin/users/{user_id}/password", tags=["admin"])
+@router.post("/admin/users/{user_id}/password", tags=["admin"], response_model=IssuedPassword)
 def admin_reset_password(
     user_id: str,
     body: AdminPasswordReset,
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return reset_user_password(db, user_id, body.new_password.get_secret_value(), current_user)
+    new_password = body.new_password.get_secret_value() if body.new_password else None
+    return reset_user_password(db, user_id, current_user, new_password, body.require_password_change)
 
 
 @router.delete("/admin/users/{user_id}", tags=["admin"])
@@ -102,6 +119,40 @@ def delete_user(user_id: str, current_user=Depends(require_admin), db: Session =
     ensure_can_manage(current_user, user, "delete_user")
     delete_user_by_id_db(db, user_id)
     return {"message": "User deleted"}
+
+
+# ---- Account Requests (password resets queued for an administrator) ----
+
+@router.get("/admin/requests", tags=["admin"], response_model=AccountRequestListResponse)
+def get_requests(
+    status: Literal["open", "resolved", "dismissed"] = "open",
+    category: Optional[Literal["password_reset"]] = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    current_user=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return list_requests(db, current_user, status, category, page, per_page)
+
+
+@router.get("/admin/requests/summary", tags=["admin"], response_model=AccountRequestSummary)
+def get_request_summary(current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    return request_summary(db, current_user)
+
+
+@router.get("/admin/requests/{request_id}", tags=["admin"], response_model=AccountRequestItem)
+def get_one_request(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    return get_request(db, current_user, request_id)
+
+
+@router.post("/admin/requests/{request_id}/temporary-password", tags=["admin"], response_model=IssuedPassword)
+def resolve_with_temporary_password(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    return issue_password_for_request(db, current_user, request_id)
+
+
+@router.post("/admin/requests/{request_id}/dismiss", tags=["admin"])
+def dismiss(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+    return dismiss_request(db, current_user, request_id)
 
 
 # ---- OAuth Client Management ----

@@ -2,6 +2,7 @@ import { createStore } from 'vuex';
 import router from '@/router';
 import api, { setAuthHandler } from '@/api';
 import { isExpired } from '@/utils/jwt';
+import { holdPassword, takePassword } from '@/utils/pendingPassword';
 
 // Tokens live in memory only (never localStorage), which keeps them away from
 // other scripts on the origin but means a page reload signs the user out.
@@ -33,12 +34,14 @@ const store = createStore({
     },
     setAdminUser(state, user) { state.adminUser = user; },
     clearAuth(state) {
+      takePassword('user');
       state.user = null;
       state.profile = null;
       state.accessToken = null;
       state.refreshToken = null;
     },
     clearAdminAuth(state) {
+      takePassword('admin');
       state.adminToken = null;
       state.adminRefreshToken = null;
       state.adminUser = null;
@@ -48,13 +51,18 @@ const store = createStore({
   actions: {
     async login({ dispatch }, { username, password }) {
       const data = await api.login(username, password);
-      await dispatch('completeLogin', data);
+      await dispatch('completeLogin', { ...data, password });
     },
 
-    // Shared by password login and the SSO hand-off.
-    async completeLogin({ commit, dispatch }, { access_token, refresh_token }) {
+    // Shared by password login and the SSO hand-off (which has no password).
+    async completeLogin({ commit, dispatch, state }, { access_token, refresh_token, password }) {
       commit('setTokens', { accessToken: access_token, refreshToken: refresh_token });
+      // Held before loading the account: a temporary password redirects to the
+      // forced change while loading, and that screen reuses it instead of asking twice.
+      if (password) holdPassword('user', password);
+      else takePassword('user');
       await Promise.all([dispatch('fetchMe'), dispatch('fetchProfile')]);
+      if (!state.user?.must_change_password) takePassword('user');
     },
 
     // Returns the new access token, or null after signing the session out.
@@ -72,7 +80,9 @@ const store = createStore({
         }
       }
       commit(admin ? 'clearAdminAuth' : 'clearAuth');
-      router.push(admin ? '/admin/login' : '/login');
+      // Come back to the same page (an OAuth consent, say) after signing in again.
+      const next = router.currentRoute.value.fullPath;
+      router.push({ path: admin ? '/admin/login' : '/login', query: next.length > 1 ? { next } : {} });
       return null;
     },
 
@@ -129,13 +139,30 @@ const store = createStore({
       }
     },
 
-    async adminLogin({ commit }, { username, password }) {
+    async adminLogin({ commit, state }, { username, password }) {
       const data = await api.adminLogin(username, password);
       commit('setAdminTokens', { accessToken: data.access_token, refreshToken: data.refresh_token });
       try {
         commit('setAdminUser', await api.getAdminMe());
       } catch {
         /* role-dependent controls stay hidden */
+      }
+      // /users/me/ works during a pending change, so nothing redirects before this.
+      if (state.adminUser?.must_change_password) holdPassword('admin', password);
+    },
+
+    // The API refused a request until the temporary password is replaced.
+    // Mid sign-in the sign-in page sends the user on itself (with its next).
+    passwordChangeRequired({ commit, state }, kind) {
+      const from = router.currentRoute.value;
+      if (from.meta.guest || from.meta.adminGuest) return;
+      const query = { next: from.fullPath };
+      if (kind === 'admin') {
+        if (state.adminUser) commit('setAdminUser', { ...state.adminUser, must_change_password: true });
+        router.push({ name: 'AdminChangePassword', query });
+      } else {
+        if (state.user) commit('setUser', { ...state.user, must_change_password: true });
+        router.push({ name: 'ChangePassword', query });
       }
     },
 
@@ -181,6 +208,7 @@ const store = createStore({
 const refreshing = {};
 setAuthHandler({
   token: kind => (kind === 'admin' ? store.state.adminToken : store.state.accessToken),
+  passwordChangeRequired: kind => store.dispatch('passwordChangeRequired', kind),
   refresh(kind) {
     if (!refreshing[kind]) {
       refreshing[kind] = store.dispatch('refreshSession', kind).finally(() => { refreshing[kind] = null; });

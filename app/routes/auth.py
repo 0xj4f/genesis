@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.services.auth_service import get_token_service, refresh_access_token_service
 from app.services.session_service import list_sessions, revoke_session, revoke_all_sessions
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from app.models.user_api_model import Token, UserMinimal
+from app.models.user_api_model import Token, UserMinimal, PasswordResetRequest
+from app.services.account_request_service import RESET_REQUESTED_MESSAGE, queue_password_reset
 from app.models.session_api_model import SessionResponse, SessionListResponse
-from app.auth.auth import oauth_authenticate_internal_service, oauth_authenticate_current_user, decode_token
+from app.auth.auth import (
+    oauth_authenticate_internal_service, oauth_authenticate_current_user, oauth_authenticate_pending_user, decode_token,
+)
 from app.auth.keys import get_jwks
 
 router = APIRouter()
@@ -38,6 +41,19 @@ def refresh_token_endpoint(
     return refresh_access_token_service(refresh_token=refresh_token, db=db, request=request)
 
 
+@router.post("/auth/password-reset-requests", tags=["auth"], status_code=202)
+def password_reset_request(body: PasswordResetRequest, request: Request, background_tasks: BackgroundTasks):
+    """Ask an administrator for a password reset (no email delivery yet). The
+    reply is identical, and sent before any lookup, whether or not an account matches."""
+    background_tasks.add_task(
+        queue_password_reset,
+        body.identifier,
+        request.client.host if request.client else None,
+        (request.headers.get("user-agent") or "")[:255] or None,
+    )
+    return {"message": RESET_REQUESTED_MESSAGE}
+
+
 # ---- JWKS Endpoint ----
 
 @router.get("/.well-known/jwks.json", tags=["auth"])
@@ -65,7 +81,7 @@ def list_user_sessions(
 @router.delete("/auth/sessions/{session_id}", tags=["sessions"])
 def revoke_user_session(
     session_id: str,
-    current_user=Depends(oauth_authenticate_current_user),
+    current_user=Depends(oauth_authenticate_pending_user),
     db: Session = Depends(get_db),
 ):
     revoke_session(db, session_id, str(current_user.id), reason="user_logout")
