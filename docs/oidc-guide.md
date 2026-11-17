@@ -91,7 +91,7 @@ User        Your App              Genesis
 
 Via CLI:
 ```bash
-docker compose exec api python -m app.cli create-client my-web-app \
+docker compose exec api /usr/bin/python3 -m app.cli create-client my-web-app \
   --redirect-uris "http://localhost:3000/callback" \
   --scopes "openid,profile,email,offline_access" \
   --audiences "genesis-api" \

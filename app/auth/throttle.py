@@ -24,6 +24,7 @@ def client_key(client_id: str) -> str:
 def ensure_attempt_allowed(key: str) -> None:
     retry = get_security_store().login_retry_after(key)
     if retry:
+        security_event("login_throttled", subject=key.removeprefix("user:")[:16], count=retry)
         raise HTTPException(
             status_code=429,
             detail="Too many failed attempts. Try again later.",
@@ -39,7 +40,7 @@ def record_failure(key: str) -> None:
         settings.LOGIN_LOCKOUT_MAX_SECONDS,
     )
     if locked_for:
-        security_event("account_locked", key=key[:24], seconds=locked_for)
+        security_event("account_locked", subject=key.removeprefix("user:")[:16], count=locked_for)
 
 
 def record_success(key: str) -> None:

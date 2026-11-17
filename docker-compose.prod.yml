@@ -29,6 +29,18 @@ services:
   api:
     image: 0xj4f/genesis:${TAG:-latest}
     restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+      - /var/log:rw,noexec,nosuid,nodev,size=${SECURITY_LOG_VOLUME_SIZE:-60m},uid=65532,gid=65532,mode=0750
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
     ports:
       - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8001}:8000"
     environment:
@@ -70,6 +82,7 @@ services:
       UPLOAD_DIR: ./uploads
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECURITY_LOG_TOTAL_MIB: ${SECURITY_LOG_TOTAL_MIB:-50}
     depends_on:
       db:
         condition: service_healthy
@@ -80,8 +93,19 @@ services:
   web:
     image: 0xj4f/genesis-web:${TAG:-latest}
     restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
     ports:
-      - "${WEB_PORT:-8082}:80"
+      - "${WEB_PORT:-8082}:8080"
     depends_on:
       - api
 

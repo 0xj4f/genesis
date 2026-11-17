@@ -39,6 +39,21 @@ jobs:
       - name: Build genesis API
         run: docker build -f Dockerfile -t 0xj4f/genesis:pr-test .
 
+      - name: Verify restricted API runtime
+        run: >-
+          docker run --rm --network none --read-only --cap-drop ALL
+          --security-opt no-new-privileges
+          --tmpfs /var/log:rw,noexec,nosuid,nodev,size=60m,uid=65532,gid=65532,mode=0750
+          --entrypoint /usr/bin/python3 0xj4f/genesis:pr-test -c
+          'import os, pathlib, cryptography, PIL, argon2, uvloop;
+          from app.config import Settings;
+          from app.utils.audit import configure_security_logging, security_event;
+          assert os.getuid() == 65532;
+          assert not any(pathlib.Path(p).exists() for p in ["/bin/sh", "/bin/bash", "/bin/busybox", "/usr/bin/apt", "/usr/bin/gcc"]);
+          configure_security_logging(Settings(SECURITY_LOG_TOTAL_MIB="50"));
+          security_event("container_smoke_test");
+          assert pathlib.Path("/var/log/security.log").stat().st_size > 0'
+
   build-web:
     name: Build Web Image
     runs-on: ubuntu-latest
@@ -47,6 +62,13 @@ jobs:
 
       - name: Build genesis-web
         run: docker build -f web/Dockerfile -t 0xj4f/genesis-web:pr-test ./web
+
+      - name: Verify restricted nginx runtime
+        run: >-
+          docker run --rm --network none --read-only --cap-drop ALL
+          --security-opt no-new-privileges
+          --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+          0xj4f/genesis-web:pr-test -t
 
   integration-test:
     name: Integration Test

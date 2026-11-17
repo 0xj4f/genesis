@@ -103,6 +103,9 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+    SECURITY_LOG_PATH: str = "/var/log/security.log"
+    # Total active + rotated files. Fixed 10 MiB segments, never 50 MiB each.
+    SECURITY_LOG_TOTAL_MIB: int = Field(50, ge=50, le=100, multiple_of=50)
 
     @model_validator(mode="after")
     def validate_frontend_and_email(self):

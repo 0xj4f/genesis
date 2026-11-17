@@ -20,7 +20,7 @@ from app.database.authz_code_db_interface import create_authz_code_db, get_authz
 from app.database.user_db_interface import get_user_by_id_db
 from app.database.profile_db_interface import get_profile_by_user_db
 from app.services.session_service import create_session
-from app.utils.audit import security_event
+from app.utils.audit import security_event, identify_actor
 from app.utils.security import verify_client_secret
 
 settings = get_settings()
@@ -69,6 +69,8 @@ def authenticate_client(db: Session, client, client_secret: str | None) -> None:
         security_event("client_auth_failed", client_id=str(client.id))
         raise HTTPException(status_code=401, detail="Invalid client credentials")
     record_success(key)
+    identify_actor(str(client.id), kind="client")
+    security_event("client_authenticated", client_id=str(client.id))
     if upgraded_hash:
         client.client_secret_hash = upgraded_hash
         db.commit()
@@ -177,6 +179,7 @@ def create_authorization_code(
         "used": False,
     })
 
+    security_event("authorization_code_issued", user_id=user_id, client_id=client_id)
     return code
 
 
@@ -276,7 +279,8 @@ def exchange_authorization_code(
     if request and request.client:
         user.last_login_ip = request.client.host
     db.commit()
-
+    # The client redeems the code; the user is the subject, not the caller.
+    security_event("authorization_code_redeemed", user_id=str(user.id), client_id=client_id)
     return result
 
 
@@ -311,6 +315,7 @@ def handle_client_credentials(db: Session, client_id: str, client_secret: str, s
 
     access_token, _ = create_access_token(data=payload)
 
+    security_event("client_token_issued", client_id=str(client.id))
     return {
         "access_token": access_token,
         "token_type": "bearer",

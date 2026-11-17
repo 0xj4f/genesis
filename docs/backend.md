@@ -53,7 +53,7 @@ MySQL (SQLAlchemy + Alembic)
 | **pydantic-settings** | 2.16.0 | Typed settings from environment variables and `.env` | Settings are validated at startup. Production refuses unsafe values: an HTTP issuer, wildcard hosts or CORS, missing RSA keys, a console mail backend, unencrypted SMTP. |
 | **SQLAlchemy** | 2.1.5 | ORM and queries | Queries are parameterised, so no SQL injection. Row locks (`with_for_update`) and atomic `UPDATE … WHERE` make single-use codes, refresh rotation and the session cap safe when requests race. |
 | **PyMySQL** | 1.2.3 | Pure-Python MySQL driver | No compiled client library needed, so the image stays small and simple. |
-| **Alembic** | 1.20.0 | Schema migrations (`alembic/versions/001`–`005`) | Migrations run automatically on container start (`entrypoint.sh`) and can be rolled back. |
+| **Alembic** | 1.20.0 | Schema migrations (`alembic/versions/001`–`005`) | Migrations run automatically on container start (`app/entrypoint.py`) and can be rolled back. |
 
 ### Security libraries
 

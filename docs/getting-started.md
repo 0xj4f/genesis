@@ -113,6 +113,9 @@ pip install -r requirements-dev.lock
 # Create database: CREATE DATABASE genesis;
 
 # Generate RSA keys
+mkdir -p .local-logs
+chmod 700 .local-logs
+export SECURITY_LOG_PATH="$PWD/.local-logs/security.log"
 python -m app.cli generate-keys
 
 # Configure
@@ -123,7 +126,7 @@ cp .env.example .env
 alembic upgrade head
 
 # Start server
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --no-access-log
 ```
 
 ## CLI Commands

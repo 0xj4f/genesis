@@ -220,3 +220,5 @@ MIT
 <p align="center">
   <sub>built by <a href="https://github.com/0xj4f">0xj4f</a></sub>
 </p>
+
+Security logging, retention, container hardening and the future S3 collector: [security event threat model](docs/security-events-threat-model.md).

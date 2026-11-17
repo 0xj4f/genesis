@@ -22,6 +22,16 @@ from app.middleware import security
 from app.utils.security_store import MemorySecurityStore
 
 
+@pytest.fixture(autouse=True)
+def security_log_path(tmp_path, monkeypatch):
+    from app.main import settings
+    from app.utils.audit import configure_security_logging
+    path = tmp_path / "security.log"
+    monkeypatch.setattr(settings, "SECURITY_LOG_PATH", str(path))
+    configure_security_logging(settings)
+    yield path
+
+
 @pytest.fixture
 def clock():
     return [1000.0]

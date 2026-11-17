@@ -284,7 +284,7 @@ def _exchange(client, oauth_client, code):
     return response.json()
 
 
-def test_oidc_refresh_tokens_are_bound_to_their_client(client, make_user, login, db):
+def test_oidc_refresh_tokens_are_bound_to_their_client(client, make_user, login, db, security_log_path):
     user = make_user()
     first_party_tokens = login(user)
     oauth_client, other_client = _make_client(db), _make_client(db)
@@ -302,6 +302,13 @@ def test_oidc_refresh_tokens_are_bound_to_their_client(client, make_user, login,
     assert rotated.status_code == 200, rotated.text
     rotated_claims = decode_token(rotated.json()["access_token"])
     assert rotated_claims["client_id"] == oauth_client.id and oauth_client.id in rotated_claims["aud"]
+    import json
+    events = [json.loads(line) for line in security_log_path.read_text().splitlines()]
+    refresh_event = next(e for e in events if e['what']['event'] == 'session_refreshed')
+    assert refresh_event['who']['type'] == 'client'
+    assert refresh_event['who']['id'] == oauth_client.id
+    assert refresh_event['what']['details']['user_id'] == str(user.id)
+    assert refresh not in security_log_path.read_text()
 
     # First-party refresh tokens are not accepted at the OAuth token endpoint.
     first_party_grant = {"grant_type": "refresh_token", "refresh_token": first_party_tokens["refresh_token"]}

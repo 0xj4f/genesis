@@ -136,3 +136,5 @@ GET    /admin/clients/{id}                 Get client
 PUT    /admin/clients/{id}                 Update client
 POST   /admin/clients/{id}/rotate-secret   Rotate client secret
 ```
+
+Security logging, retention, container hardening and the future S3 collector: [security event threat model](security-events-threat-model.md).

@@ -6,6 +6,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 from app.auth.keys import get_signing_key
 from app.middleware.security import SecurityMiddleware
+from app.middleware.audit import AuditMiddleware
+from app.utils.audit import configure_security_logging, security_event
 from app.config import get_settings
 from app.routes.users import router as user_router
 from app.routes.profiles import router as profile_router
@@ -23,9 +25,18 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
+    configure_security_logging(settings)
     # Fail startup if no usable signing key exists; never weaken auth.
-    get_signing_key()
-    yield
+    try:
+        get_signing_key()
+    except Exception:
+        security_event("startup_failed")
+        raise
+    security_event("application_started")
+    try:
+        yield
+    finally:
+        security_event("application_stopped")
 
 
 app = FastAPI(title="Genesis - Identity Access Management", lifespan=lifespan)
@@ -39,6 +50,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(AuditMiddleware)
 
 # Routes
 app.include_router(auth_router, prefix="", tags=["auth"])

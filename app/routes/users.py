@@ -24,7 +24,9 @@ router = APIRouter()
 @router.post("/", response_model=User)
 def create_user(user_create: UserCreate, db: Session = Depends(get_db)):
     try:
-        return create_user_service(db, user_create)
+        user = create_user_service(db, user_create)
+        security_event("user_registered", target=str(user.id))
+        return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -79,6 +81,7 @@ def update_user(user_id: UUID, user_update: UserUpdate, db: Session = Depends(ge
         user, pending = update_user_service(db, target, user_update, is_self)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    security_event("user_updated", actor=str(current_user.id), target=str(user.id))
     return User.model_validate(user).model_copy(update={"email_change_pending": pending})
 
 @router.delete("/{user_id}", response_model=UserDeleteResponse)
@@ -91,6 +94,7 @@ def delete_user(user_id: UUID, db: Session = Depends(get_db), current_user=Depen
         raise HTTPException(status_code=403, detail="Cannot delete ROOT user")
     ensure_can_manage(current_user, target, "delete_user")
     delete_user_service(db, str(user_id))
+    security_event("user_deleted", actor=str(current_user.id), target=str(user_id))
     return {"message": f"User with ID {user_id} has been successfully deleted"}
 
 @router.post("/search", response_model=User)

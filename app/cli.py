@@ -13,6 +13,7 @@ import sys
 import secrets
 
 from app.auth.keys import generate_rsa_key_pair
+from app.utils.audit import audit_context, configure_security_logging, security_event
 
 
 def cmd_generate_keys(args):
@@ -34,6 +35,7 @@ def cmd_generate_keys(args):
     os.chmod(private_path, 0o600)
     with open(public_path, "wb") as f:
         f.write(public_pem)
+    security_event("signing_keys_generated")
 
     print(f"RSA {args.key_size}-bit key pair generated:")
     print(f"  Private: {private_path}")
@@ -84,6 +86,7 @@ def cmd_create_client(args):
             "is_first_party": args.first_party,
         })
 
+        security_event("oauth_client_created", target=str(client.id))
         print(f"OAuth client created:")
         print(f"  client_id:     {client.id}")
         print(f"  client_secret: {client_secret}")
@@ -131,6 +134,7 @@ def cmd_reset_password(args):
             print(f"No user named '{args.username}'.")
             sys.exit(1)
         set_user_password_db(db, user, hash_password(password), reason="cli_password_reset")
+        security_event("password_reset_cli", target=str(user.id))
         print(f"Password reset for '{args.username}'. All sessions were revoked.")
     finally:
         db.close()
@@ -169,7 +173,17 @@ def main():
 
     args = parser.parse_args()
     if hasattr(args, "func"):
-        args.func(args)
+        from app.config import get_settings
+        configure_security_logging(get_settings())
+        token = audit_context.set({"entrypoint": "cli", "actor": {"type": "os_user", "id": str(os.getuid()), "role": None}})
+        security_event("cli_started", action=args.command)
+        try:
+            args.func(args)
+        except BaseException:
+            security_event("cli_failed", action=args.command)
+            raise
+        finally:
+            audit_context.reset(token)
     else:
         parser.print_help()
 

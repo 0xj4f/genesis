@@ -1,11 +1,10 @@
-# Rendered at container start by the nginx image's envsubst step:
-# ${API_ORIGIN} is the Genesis API origin the browser calls (e.g. https://auth.example.com).
+# Rendered at build time from VUE_APP_API_URL by render-nginx.cjs.
 
 # Shared across nginx workers. Static page loads get a short asset burst.
 limit_req_zone $binary_remote_addr zone=web_per_ip:10m rate=30r/s;
 
 server {
-    listen 80;
+    listen 8080;
     server_name localhost;
     root /usr/share/nginx/html;
     index index.html;

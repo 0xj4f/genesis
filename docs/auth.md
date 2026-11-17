@@ -570,7 +570,7 @@ Set from `OAUTH_ISSUER` and checked exactly on decode. It must be the public URL
 ### 6.8 Signing keys, `kid` and JWKS
 
 - **RS256** (RSA‑SHA256): the private key signs and the public key verifies. Only Genesis can mint tokens, and anyone can check them.
-- Keys are loaded from `OAUTH_PRIVATE_KEY_PATH` and `OAUTH_PUBLIC_KEY_PATH`. They must be a matching RSA pair of at least 2048 bits, or startup fails. The `kid` header is `OAUTH_JWT_KID`. `entrypoint.sh` generates a pair into `./secrets` if the private key file is missing.
+- Keys are loaded from `OAUTH_PRIVATE_KEY_PATH` and `OAUTH_PUBLIC_KEY_PATH`. They must be a matching RSA pair of at least 2048 bits, or startup fails. The `kid` header is `OAUTH_JWT_KID`. `app/entrypoint.py` generates a pair at the configured paths only when both files are missing; a partial/mismatched pair fails startup.
 - `/.well-known/jwks.json` publishes the public key as a JWK (`kty`, `n`, `e`, `kid`, `alg`, `use: sig`).
 - On decode, Genesis looks up the key **by `kid`** and pins `algorithms=[that key's alg]`. That blocks `alg: none` and RS256→HS256 confusion attacks.
 - **HS256 development fallback:** when no key paths are configured and `ENVIRONMENT != production`, Genesis signs with `OAUTH_SECRET_KEY` (at least 32 characters, and never the formerly committed default). Production refuses to start without RSA keys and an `https` issuer.

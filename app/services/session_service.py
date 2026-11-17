@@ -17,6 +17,7 @@ from app.database.session_db_interface import (
 from app.config import get_settings
 from app.utils.helpers import parse_device_name
 from app.models.user_db_model import User
+from app.utils.audit import security_event, subject_hash
 
 settings = get_settings()
 
@@ -88,6 +89,7 @@ def revoke_session(db: DBSession, session_id: str, user_id: str, reason: str = "
     if not session.is_active:
         raise HTTPException(status_code=400, detail="Session already revoked")
     revoke_session_db(db, session_id, reason)
+    security_event("session_revoked", user_id=user_id, target=subject_hash(session_id), reason=reason)
     return True
 
 
@@ -95,7 +97,9 @@ def revoke_all_sessions(
     db: DBSession, user_id: str, except_session_id: str | None = None, reason: str = "user_logout"
 ) -> int:
     """Revoke all sessions for a user except the current one."""
-    return revoke_all_user_sessions_db(db, user_id, except_session_id, reason)
+    count = revoke_all_user_sessions_db(db, user_id, except_session_id, reason)
+    security_event("sessions_revoked", user_id=user_id, count=count, reason=reason)
+    return count
 
 
 def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id: str) -> str:
@@ -112,6 +116,7 @@ def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id:
     if session.refresh_token_jti != jti:
         # Potential token theft - JTI mismatch means a rotated token was replayed
         revoke_session_db(db, sid, reason="token_rotation")
+        security_event("refresh_replay_detected", user_id=user_id, target=subject_hash(sid))
         raise HTTPException(
             status_code=401,
             detail="Refresh token has been rotated. Session revoked for security.",

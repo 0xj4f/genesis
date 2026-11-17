@@ -228,3 +228,7 @@ Summary of the changes from the authentication audit (full report:
 - Optional email verification (`EMAIL_VERIFY`, default false). Enabling it on an existing database requires existing
   unverified users to verify (via `POST /auth/email/resend`) before password sign-in.
 - Emergency password reset: `python -m app.cli reset-password USERNAME` (password from stdin, never printed).
+
+## Security events and container isolation (2026-10-25)
+
+See the [security event threat model](security-events-threat-model.md) for attributed JSON events, the 50 MiB local rotation budget, shell-free non-root API/web images, volume ownership migration, and the disabled future S3 collector. This supersedes earlier runtime/startup instructions where they differ.

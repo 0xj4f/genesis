@@ -8,6 +8,7 @@ __pycache__
 !.env.example
 secrets
 uploads
+.local-logs
 .aws
 .codex
 .agents

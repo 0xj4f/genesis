@@ -36,6 +36,7 @@ docs/internal
 # Secrets & uploads
 secrets/
 uploads/
+.local-logs/
 
 # Alembic
 alembic/versions/__pycache__

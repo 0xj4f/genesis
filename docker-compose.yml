@@ -18,6 +18,18 @@ services:
 
   api:
     build: .
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+      - /var/log:rw,noexec,nosuid,nodev,size=${SECURITY_LOG_VOLUME_SIZE:-60m},uid=65532,gid=65532,mode=0750
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
     ports:
       - "8001:8000"
     environment:
@@ -57,11 +69,13 @@ services:
       UPLOAD_DIR: ./uploads
       # Logging
       LOG_LEVEL: INFO
+      SECURITY_LOG_TOTAL_MIB: ${SECURITY_LOG_TOTAL_MIB:-50}
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./uploads:/app/uploads
+      - uploads:/app/uploads
+      - signing_keys:/app/secrets
 
   # Development mail catcher (SMTP on 1025, web inbox on 8025). Nothing is delivered.
   mailpit:
@@ -75,12 +89,23 @@ services:
       context: ./web
       args:
         VUE_APP_API_URL: http://localhost:8001
-    environment:
-      API_ORIGIN: http://localhost:8001
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
     ports:
-      - "8082:80"
+      - "8082:8080"
     depends_on:
       - api
 
 volumes:
   mysql_data:
+  uploads:
+  signing_keys:

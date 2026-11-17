@@ -7,7 +7,7 @@ from jwt import InvalidTokenError
 from app.database.user_db_interface import get_user_by_username_db, get_user_by_id_db
 from app.models.user_api_model import User, TokenData, UserMinimal
 from app.utils.security import verify_and_update_password, verify_dummy_password
-from app.utils.audit import security_event, subject_hash
+from app.utils.audit import security_event, subject_hash, identify_actor
 from app.auth.throttle import login_key, ensure_attempt_allowed, record_failure, record_success
 from app.database.session import get_db
 from app.config import get_settings
@@ -30,6 +30,8 @@ def authenticate_user(db: Session, username: str, password: str):
         valid = False
     else:
         valid, upgraded_hash = verify_and_update_password(password, user.password)
+        if valid:
+            identify_actor(str(user.id), role=user.role)
         if valid and upgraded_hash:
             # Outdated algorithm or parameters (e.g. bcrypt): store the new hash.
             user.password = upgraded_hash
@@ -165,6 +167,7 @@ def _authenticate_access_token(token: str, db: Session):
     if user.disabled or not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
     session = validate_access_session(db, payload)
+    identify_actor(str(user.id), role=user.role)
     return user, payload, session
 
 
@@ -263,5 +266,7 @@ def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme), db:
 
     if payload.get("auth_method") != "client_credentials":
         oauth_authenticate_current_user(token, db)
+    else:
+        identify_actor(str(user_id), kind="client")
 
     return UserMinimal(user_id=user_id, username=username)

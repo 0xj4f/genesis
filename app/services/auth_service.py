@@ -18,7 +18,7 @@ from app.services.session_service import (
     validate_refresh_against_session,
     rotate_session_token,
 )
-from app.utils.audit import security_event
+from app.utils.audit import security_event, identify_actor
 
 
 def get_token_service(db: Session, form_data: OAuth2PasswordRequestForm, request: Request) -> dict:
@@ -110,6 +110,8 @@ def refresh_access_token_service(
 
     # Validate refresh token against session (replay detection)
     validate_refresh_against_session(db, jti, sid, user_id)
+    if not via_oauth_client:
+        identify_actor(str(user.id), role=user.role)
 
     # Pre-generate new refresh JTI
     new_refresh_jti = str(uuid4())
@@ -130,6 +132,7 @@ def refresh_access_token_service(
 
     new_access_token, _ = create_access_token(data=new_payload)
     new_refresh_token, _ = create_refresh_token(data={**new_payload, "jti_override": new_refresh_jti})
+    security_event("session_refreshed", user_id=str(user.id), client_id=bound_client_id)
 
     return {
         "access_token": new_access_token,

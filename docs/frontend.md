@@ -20,7 +20,7 @@ The Genesis web app ([`web/`](web/)) is a single-page Vue app. It covers sign-in
 | **Linking an SSO account** | An authenticated `POST /auth/sso/{provider}/link` returns the provider's URL. The old version used a plain link, which can't carry the bearer token, so linking never worked. |
 | **Redirects after login** | `?next=` is only followed for same-app paths (`safeNextPath`), so it can't be used as an open redirect. |
 | **Showing user data** | Everything goes through Vue's escaping. There is no `v-html` anywhere. Avatar URLs pass through `assetUrl()`, which allows only http(s). Clients can no longer set picture URLs at all; only uploads and SSO imports can. |
-| **Content-Security-Policy** (nginx) | Scripts may only come from the app's own origin. Network calls may only go to the app and the Genesis API (`API_ORIGIN`). No framing, no plugins, and forms may only submit to the app itself. Google Fonts were removed so the page makes no third-party requests. |
+| **Content-Security-Policy** (nginx) | Scripts may only come from the app's own origin. Network calls may only go to the app and the Genesis API (the origin of build-time `VUE_APP_API_URL`). No framing, no plugins, and forms may only submit to the app itself. Google Fonts were removed so the page makes no third-party requests. |
 | **Other headers** (nginx) | HSTS, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`. `index.html` is always revalidated, and only hashed build files are cached long-term. |
 | **Forms** | Password rules match the API (12–128 characters, upper and lower case, a number, one of `@#$%^&+=!`), with a confirm field and proper `autocomplete` hints for password managers. Changing your password or email needs your current password. |
 | **Admin console** | Buttons are hidden when the API would refuse the action: admins manage regular users, and only root manages admins. Changing a role or disabling an account asks for confirmation. **The API is still what enforces the rules**; the UI only reflects them. |
@@ -53,7 +53,7 @@ The app uses the browser's own `fetch`, `URL`, `URLSearchParams` and `atob`; the
 | Image | Purpose | Why |
 |---|---|---|
 | `node:24-alpine` (build stage) | Runs `npm ci` and `npm run build` | Node 24 is the current LTS; Node 20 reached end of life in April 2026. Alpine keeps the build stage small. |
-| `nginx:1.30-alpine` (runtime) | Serves the static build; fills `API_ORIGIN` into the CSP at container start (`/etc/nginx/templates`) | A pinned stable nginx with no Node at runtime. Per-IP rate limiting (`limit_req`) and security headers are set in [`web/nginx.conf.template`](web/nginx.conf.template). |
+| `scratch` runtime, nginx from `nginx:1.30-alpine` build stage | Serves static files on port 8080 as UID 65532; CSP is generated at build time | Only nginx and its shared libraries; no shell, BusyBox, package manager or Node at runtime. Per-IP rate limiting (`limit_req`) and security headers are set in [`web/nginx.conf.template`](web/nginx.conf.template). |
 
 ---
 
@@ -62,7 +62,7 @@ The app uses the browser's own `fetch`, `URL`, `URLSearchParams` and `atob`; the
 | Name | When | Purpose |
 |---|---|---|
 | `VUE_APP_API_URL` | Build time (Docker `--build-arg`, or `.env.production` for local builds) | Genesis API base URL compiled into the bundle. The default is `http://localhost:8001`. |
-| `API_ORIGIN` | Container start (environment) | The API origin allowed by the CSP's `connect-src`/`img-src`. It must match `VUE_APP_API_URL`'s origin. |
+| CSP API origin | Build time | Derived automatically from `VUE_APP_API_URL`; the former runtime `API_ORIGIN` setting is no longer used. |
 
 **What the API needs for the web app to work:**
 - **`FRONTEND_URL`** on the API must point at this app. SSO hand-off, verification emails and the OIDC consent page all depend on it.
@@ -74,5 +74,5 @@ The app uses the browser's own `fetch`, `URL`, `URLSearchParams` and `atob`; the
 ## What's outdated, and suggested follow-ups
 1. **Vue CLI → Vite and Vuex → Pinia.** Both current tools are in maintenance mode. Moving gives faster builds, a supported toolchain and ESLint 9. This isn't a security fix, so it wasn't part of this round.
 2. **HttpOnly refresh-token cookie** so the session survives a reload without exposing tokens to scripts.
-3. **Deploy the web app to the homelab cluster** (infra milestone M8). It needs an image build in `build-images.sh`, a Deployment and Ingress, `API_ORIGIN`, and the app's origin in Genesis's CORS list.
+3. **Deploy the web app to the homelab cluster** (infra milestone M8). It needs an image build in `build-images.sh`, a Deployment and Ingress targeting port 8080, and the app's origin in Genesis's CORS list.
 4. **Timestamps:** the API returns UTC times without a timezone marker, so the UI shows them shifted by the local offset (for example "8h ago"). Sending timezone-aware ISO strings from the API would fix it.

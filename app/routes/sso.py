@@ -200,6 +200,8 @@ async def _complete_sso(provider: str, code, state, error, request: Request, db:
             # provider cleared; hand it a session for the user who linked.
             result = {**await run_in_threadpool(issue_tokens_for_user, db, linked_user_id, provider, request), "linked": provider}
     except HTTPException as exc:
+        from app.utils.audit import security_event
+        security_event("sso_failed", reason=_error_code(exc))
         if not frontend:
             raise
         response = RedirectResponse(f"{frontend}/sso/callback#error={_error_code(exc)}", status_code=302)

@@ -37,7 +37,7 @@ from app.database.oauth_account_db_interface import (
 )
 from app.database.user_db_interface import get_user_by_email_db, get_user_by_username_db
 from app.services.session_service import create_session
-from app.utils.audit import security_event
+from app.utils.audit import security_event, identify_actor
 from app.utils.security_store import get_security_store, SecurityStoreUnavailable
 
 settings = get_settings()
@@ -133,9 +133,9 @@ async def exchange_code_for_tokens(provider: OAuthProviderConfig, code: str, cod
     try:
         async with _oauth_client(provider) as client:
             token = await client.fetch_token(provider.token_url, **kwargs)
-    except (OAuthError, httpx.HTTPError, ValueError) as exc:
-        # Provider error details are logged, not echoed to the browser.
-        logger.warning("Token exchange with %s failed: %s", provider.name, exc)
+    except (OAuthError, httpx.HTTPError, ValueError):
+        # Provider exception strings can contain credentials or callback URLs.
+        logger.warning("Token exchange with %s failed", provider.name)
         raise HTTPException(status_code=502, detail=f"Failed to exchange code with {provider.name}")
     if not token.get("access_token"):
         raise HTTPException(status_code=502, detail="No access token from provider")
@@ -159,8 +159,8 @@ def verify_id_token(provider: OAuthProviderConfig, id_token: str, nonce: str | N
             issuer=provider.issuers,
             options={"require": ["iss", "sub", "aud", "exp", "iat"]},
         )
-    except jwt.PyJWTError as exc:
-        logger.warning("Rejected ID token from %s: %s", provider.name, exc)
+    except jwt.PyJWTError:
+        logger.warning("Rejected ID token from %s", provider.name)
         raise HTTPException(status_code=502, detail="Invalid ID token from provider")
     if not nonce or not secrets.compare_digest(str(claims.get("nonce", "")), nonce):
         logger.warning("Rejected ID token from %s: nonce mismatch", provider.name)
@@ -194,8 +194,8 @@ async def fetch_identity(provider: OAuthProviderConfig, token: dict, nonce: str 
                     if primary:
                         userinfo["email"] = primary["email"]
                         userinfo["email_verified"] = True
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("Userinfo request to %s failed: %s", provider.name, exc)
+    except (httpx.HTTPError, ValueError):
+        logger.warning("Userinfo request to %s failed", provider.name)
         raise HTTPException(status_code=502, detail=f"Failed to fetch userinfo from {provider.name}")
     return userinfo
 
@@ -315,6 +315,7 @@ def _handle_login_or_register(
                 raise HTTPException(status_code=403, detail="User account is deactivated")
             if existing_user.email_verified and userinfo.get("email_verified") is True:
                 _create_oauth_account(db, str(existing_user.id), provider, userinfo)
+                identify_actor(str(existing_user.id), role=existing_user.role)
                 security_event("sso_auto_linked", user_id=str(existing_user.id), provider=provider.name)
                 return _issue_tokens(db, existing_user, provider.name, request)
             raise HTTPException(
@@ -365,6 +366,7 @@ def _handle_login_or_register(
     db.flush()
 
     _create_oauth_account(db, str(new_user.id), provider, userinfo)
+    identify_actor(str(new_user.id), role=new_user.role)
     security_event("sso_registered", user_id=str(new_user.id), provider=provider.name)
 
     return _issue_tokens(db, new_user, provider.name, request)
@@ -380,6 +382,8 @@ def _handle_link(
     user_id = state_data.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="No user context for link action")
+    # The server-held, browser-bound state was created by an authenticated user.
+    identify_actor(user_id)
 
     # Check if this provider account is already linked to someone else
     existing = get_oauth_account_by_provider_db(db, provider.name, userinfo["provider_user_id"])
@@ -490,6 +494,7 @@ def redeem_login_handoff(code: str, binding: str | None) -> dict:
 # ---- Internal helpers ----
 
 def _issue_tokens(db: Session, user, provider_name: str, request: Request) -> dict:
+    identify_actor(str(user.id), role=user.role)
     """Create session and issue JWT tokens for an SSO-authenticated user."""
     refresh_jti = str(uuid4())
 

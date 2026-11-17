@@ -9,6 +9,7 @@ from app.models.profile_db_model import Profile
 from app.utils.security import hash_password
 from app.config import get_settings
 from app.models.user_api_model import validate_password_strength
+from app.utils.audit import security_event
 
 
 def seed_adam():
@@ -52,6 +53,7 @@ def seed_adam():
         )
         db.add(profile)
         db.commit()
+        security_event("root_bootstrapped", target=str(adam.id))
 
         print("=" * 60)
         print("  GENESIS ROOT USER CREATED")
@@ -77,4 +79,6 @@ def seed_adam():
 
 
 if __name__ == "__main__":
+    from app.utils.audit import configure_security_logging
+    configure_security_logging(get_settings())
     seed_adam()

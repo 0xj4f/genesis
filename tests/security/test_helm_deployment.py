@@ -29,7 +29,7 @@ def deployment(request):
     shop_host = re.search(r"^SHOP_HOST\s*:?=\s*(\S+)", config, re.M)[1]
     rendered = subprocess.run([
         "helm", "template", "genesis", str(INFRA / "public/iam"), "--namespace", "iam",
-        "--set-string", f"host={auth_host}", "--set-string", f"shopHost={shop_host}",
+        "--set-string", f"host={auth_host}", "--set-string", f"corsOrigins[0]=https://{shop_host}",
         "--set-string", "tag=offline-compatibility-test",
     ], text=True, capture_output=True, check=True)
     documents = list(yaml.safe_load_all(rendered.stdout))
@@ -69,6 +69,48 @@ def test_rendered_probe_hosts_match_production_allowlist(deployment):
     assert mount["mountPath"] == "/app/keys" and mount["readOnly"] is True
 
 
+def test_local_log_budget_and_container_isolation(deployment):
+    _, _, api, container, documents = deployment
+    pod = api["spec"]["template"]["spec"]
+    assert pod["securityContext"]["runAsUser"] == 65532
+    assert pod["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
+    assert pod["automountServiceAccountToken"] is False
+    assert len(pod["containers"]) == 1
+    assert not pod.get("initContainers")
+    assert not any(d['metadata']['name'] == 'genesis-security-collector' for d in documents)
+    assert container['securityContext']['readOnlyRootFilesystem'] is True
+    assert container['securityContext']['allowPrivilegeEscalation'] is False
+    assert container['securityContext']['capabilities']['drop'] == ['ALL']
+    volume = next(v for v in pod['volumes'] if v['name'] == 'security-logs')
+    assert volume['emptyDir'] == {'medium': 'Memory', 'sizeLimit': '60Mi'}
+    assert not any(v['name'] == 'collector-identity' for v in pod['volumes'])
+
+
+def test_disabled_collector_can_be_rendered_as_placeholder():
+    args = ['helm', 'template', 'genesis', str(INFRA / 'public/iam'), '--namespace', 'iam',
+            '--set-string', 'host=auth.example.com', '--set-string', 'corsOrigins[0]=https://shop.example.com',
+            '--set', 'securityLogging.collector.enabled=true', '--set', 'securityLogging.totalMiB=100',
+            '--set-string', 'securityLogging.collector.image=example.invalid/fluent-bit@sha256:' + '0' * 64,
+            '--set-string', 'securityLogging.collector.bucket=placeholder-bucket',
+            '--set-string', 'securityLogging.collector.region=ap-southeast-1',
+            '--set-string', 'securityLogging.collector.roleArn=arn:aws:iam::000000000000:role/placeholder',
+            '--set-string', 'securityLogging.collector.serviceAccountName=placeholder']
+    docs = list(yaml.safe_load_all(subprocess.run(args, capture_output=True, text=True, check=True).stdout))
+    pod = next(d for d in docs if d['kind'] == 'Deployment' and d['metadata']['name'] == 'genesis-api')['spec']['template']['spec']
+    api, collector = pod['containers']
+    assert not any(m['name'] == 'collector-identity' for m in api['volumeMounts'])
+    assert next(m for m in collector['volumeMounts'] if m['name'] == 'security-logs')['readOnly'] is True
+    assert next(v for v in pod['volumes'] if v['name'] == 'security-logs')['emptyDir']['sizeLimit'] == '110Mi'
+    config = next(d for d in docs if d['kind'] == 'ConfigMap')['data']['fluent-bit.conf']
+    assert 'store_dir_limit_size  20M' in config
+    assert 'Path              /var/log/security.log' in config
+    assert 'tls.verify            On' in config
+    # Fail closed instead of accidentally creating an unbounded ring or unreviewed collector.
+    for setting in ['securityLogging.totalMiB=500', 'securityLogging.collector.image=fluent/fluent-bit:latest']:
+        rejected = subprocess.run(args + ['--set-string', setting], capture_output=True, text=True)
+        assert rejected.returncode != 0
+
+
 def test_app_accepts_chart_hosts_probes_and_cors_in_production(deployment, tmp_path):
     auth_host, shop_host, _, container, _ = deployment
     values = {item["name"]: item["value"] for item in container["env"] if "value" in item}
@@ -76,7 +118,8 @@ def test_app_accepts_chart_hosts_probes_and_cors_in_production(deployment, tmp_p
     (tmp_path / "private.pem").write_bytes(private)
     (tmp_path / "public.pem").write_bytes(public)
     values.update(OAUTH_PRIVATE_KEY_PATH=str(tmp_path / "private.pem"),
-                  OAUTH_PUBLIC_KEY_PATH=str(tmp_path / "public.pem"), UPLOAD_DIR=str(tmp_path / "uploads"))
+                  OAUTH_PUBLIC_KEY_PATH=str(tmp_path / "public.pem"), UPLOAD_DIR=str(tmp_path / "uploads"),
+                  SECURITY_LOG_PATH=str(tmp_path / "security.log"))
     script = '''
 import os
 from fastapi.testclient import TestClient
