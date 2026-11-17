@@ -494,8 +494,8 @@ def redeem_login_handoff(code: str, binding: str | None) -> dict:
 # ---- Internal helpers ----
 
 def _issue_tokens(db: Session, user, provider_name: str, request: Request) -> dict:
-    identify_actor(str(user.id), role=user.role)
     """Create session and issue JWT tokens for an SSO-authenticated user."""
+    identify_actor(str(user.id), role=user.role)
     refresh_jti = str(uuid4())
 
     session_id = create_session(

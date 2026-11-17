@@ -15,3 +15,9 @@ export const SCOPE_DESCRIPTIONS = {
   email: 'Your email address',
   offline_access: 'Stay signed in (refresh tokens)',
 };
+
+const PROVIDER_NAMES = { github: 'GitHub', google: 'Google', facebook: 'Facebook', native: 'Password' };
+
+export function providerName(provider) {
+  return PROVIDER_NAMES[provider] || provider.charAt(0).toUpperCase() + provider.slice(1);
+}

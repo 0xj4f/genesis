@@ -30,6 +30,14 @@ def get_active_sessions_by_user_db(db: DBSession, user_id: str) -> list[Session]
     ).order_by(Session.created_at.desc()).all()
 
 
+def count_active_sessions_by_user_db(db: DBSession, user_id: str) -> int:
+    return db.query(Session).filter(
+        Session.user_id == user_id,
+        Session.is_active == True,  # noqa: E712
+        Session.expires_at > datetime.utcnow(),
+    ).count()
+
+
 def update_session_jti_db(db: DBSession, session_id: str, new_jti: str, expected_jti: str, user_id: str) -> bool:
     # Compare-and-swap in the database: exactly one concurrent refresh can win.
     count = db.query(Session).filter(

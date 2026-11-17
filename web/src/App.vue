@@ -1,172 +1,90 @@
 <template>
-  <div id="app">
-    <!-- Admin Navbar -->
-    <nav v-if="isAdminRoute && isAdminAuthenticated" class="navbar navbar-admin">
-      <div class="navbar-inner">
-        <router-link to="/admin" class="nav-brand">
-          <span class="brand-icon brand-admin">!</span>
-          <span class="brand-text">genesis<span class="text-warn">_admin</span></span>
+  <div id="app-root" :class="{ 'has-tabbar': showUserNav }">
+    <a href="#main" class="skip-link">Skip to content</a>
+
+    <!-- User app shell (admin pages bring their own layout) -->
+    <header v-if="showUserNav" class="topbar">
+      <div class="topbar-inner">
+        <router-link to="/profile" class="brand">
+          <BrandMark />
+          <span>Genesis</span>
         </router-link>
-        <div class="nav-links">
-          <router-link to="/admin" class="nav-link">// dashboard</router-link>
-          <button class="btn btn-ghost nav-link" @click="adminLogout">// logout</button>
-        </div>
+        <nav class="topnav" aria-label="Main">
+          <router-link to="/profile"><UserRound :size="16" aria-hidden="true" />Profile</router-link>
+          <router-link to="/sessions"><MonitorSmartphone :size="16" aria-hidden="true" />Sessions</router-link>
+        </nav>
+        <div class="spacer"></div>
+        <AccountMenu :name="displayName" :email="currentUser?.email" :avatar="avatar" :initials="initials"
+                     @sign-out="logout" />
       </div>
+    </header>
+
+    <div id="main" tabindex="-1">
+      <router-view />
+    </div>
+
+    <nav v-if="showUserNav" class="tabbar" aria-label="Main">
+      <router-link to="/profile"><UserRound :size="22" aria-hidden="true" />Profile</router-link>
+      <router-link to="/sessions"><MonitorSmartphone :size="22" aria-hidden="true" />Sessions</router-link>
     </nav>
 
-    <!-- User Navbar -->
-    <nav v-else-if="isAuthenticated && !isAdminRoute" class="navbar">
-      <div class="navbar-inner">
-        <router-link to="/profile" class="nav-brand">
-          <span class="brand-icon">&gt;_</span>
-          <span class="brand-text">genesis<span class="text-accent">_iam</span></span>
-        </router-link>
-        <div class="nav-links">
-          <router-link to="/profile" class="nav-link">// profile</router-link>
-          <router-link to="/sessions" class="nav-link">// sessions</router-link>
-          <button class="btn btn-ghost nav-link" @click="logout">// logout</button>
-        </div>
-      </div>
-    </nav>
-
-    <router-view />
-
-    <footer v-if="showFooter" class="auth-footer">
-      <span class="text-muted">built by </span><span class="text-accent">0xj4f</span>
-    </footer>
+    <ToastHost />
+    <ConfirmDialog />
   </div>
 </template>
 
 <script>
-import { mapGetters, mapActions } from 'vuex';
+import { mapGetters, mapActions, mapState } from 'vuex';
+import { UserRound, MonitorSmartphone } from 'lucide-vue-next';
+import BrandMark from '@/components/ui/BrandMark.vue';
+import AccountMenu from '@/components/ui/AccountMenu.vue';
+import ToastHost from '@/components/ui/ToastHost.vue';
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue';
+import { assetUrl } from '@/utils/url';
 
 export default {
   name: 'App',
+  components: { UserRound, MonitorSmartphone, BrandMark, AccountMenu, ToastHost, ConfirmDialog },
   computed: {
-    ...mapGetters(['isAuthenticated', 'isAdminAuthenticated']),
-    isAdminRoute() {
-      return this.$route.path.startsWith('/admin');
+    ...mapGetters(['isAuthenticated', 'currentUser', 'initials']),
+    ...mapState(['profile']),
+    showUserNav() {
+      return this.isAuthenticated && !this.$route.path.startsWith('/admin') && !this.$route.meta.bare;
     },
-    showFooter() {
-      return (!this.isAuthenticated && !this.isAdminRoute) ||
-             (this.isAdminRoute && !this.isAdminAuthenticated);
+    displayName() {
+      if (this.profile?.given_name) return `${this.profile.given_name} ${this.profile.family_name || ''}`.trim();
+      return this.currentUser?.username || 'Account';
+    },
+    avatar() { return assetUrl(this.profile?.picture); },
+  },
+  watch: {
+    // Move focus to the new page for keyboard and screen reader users.
+    '$route.path'(to, from) {
+      if (from && to.split('/')[1] !== from.split('/')[1]) {
+        this.$nextTick(() => document.getElementById('main')?.focus({ preventScroll: true }));
+      }
     },
   },
   methods: {
-    ...mapActions(['logout', 'adminLogout']),
+    ...mapActions(['logout']),
   },
 };
 </script>
 
 <style>
-.navbar {
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
+#main:focus { outline: none; }
 
-.navbar::after {
-  content: '';
+.skip-link {
   position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0.3;
-}
-
-.navbar-admin::after {
-  background: linear-gradient(90deg, transparent, #f59e0b, transparent);
-}
-
-.navbar-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 var(--space-lg);
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.nav-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  text-decoration: none;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.brand-icon {
-  width: 36px;
-  height: 36px;
+  left: var(--space-md);
+  top: -100px;
+  z-index: var(--z-toast);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-accent);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--text-sm);
-  font-family: var(--font-mono);
+  color: var(--text);
 }
 
-.brand-admin {
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.brand-text {
-  font-size: var(--text-base);
-  font-family: var(--font-mono);
-}
-
-.text-accent { color: var(--accent); }
-.text-warn { color: #f59e0b; }
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-.nav-link {
-  padding: 6px 12px;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  text-decoration: none;
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
-}
-
-.nav-link:hover,
-.nav-link.router-link-active {
-  color: var(--accent);
-  background: var(--accent-glow);
-}
-
-.navbar-admin .nav-link:hover,
-.navbar-admin .nav-link.router-link-active {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-}
-
-.auth-footer {
-  position: fixed;
-  bottom: var(--space-lg);
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.05em;
-}
+.skip-link:focus { top: calc(var(--space-sm) + var(--safe-top)); }
 </style>

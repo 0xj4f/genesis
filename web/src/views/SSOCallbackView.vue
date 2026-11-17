@@ -1,25 +1,28 @@
 <template>
-  <div class="page-center">
-    <div class="card text-center" style="max-width: 400px; width: 100%;">
-      <div v-if="loading" class="stack" style="align-items: center;">
-        <div class="spinner" style="width: 32px; height: 32px;"></div>
-        <p class="text-muted">Completing sign in...</p>
-      </div>
-      <div v-else-if="error" class="stack">
-        <h2>Sign in failed</h2>
-        <div class="alert alert-error">{{ error }}</div>
-        <router-link to="/login" class="btn btn-primary btn-block">Back to Login</router-link>
-      </div>
+  <AuthLayout>
+    <div v-if="loading" class="status" role="status">
+      <span class="spinner status-spinner" aria-hidden="true"></span>
+      <h1>Completing sign in…</h1>
+      <p>Hang tight while we confirm your account.</p>
     </div>
-  </div>
+    <div v-else-if="error" class="status">
+      <span class="status-icon bad" aria-hidden="true"><CircleAlert :size="24" /></span>
+      <h1>Sign in didn't finish</h1>
+      <p>{{ error }}</p>
+      <router-link to="/login" class="btn btn-primary btn-block btn-lg mt-lg">Back to sign in</router-link>
+    </div>
+  </AuthLayout>
 </template>
 
 <script>
+import { CircleAlert } from 'lucide-vue-next';
 import api from '@/api';
+import AuthLayout from '@/components/ui/AuthLayout.vue';
 import { SSO_ERRORS } from '@/utils/messages';
 
 export default {
   name: 'SSOCallbackView',
+  components: { CircleAlert, AuthLayout },
   data() {
     return { loading: true, error: '' };
   },
@@ -54,3 +57,4 @@ export default {
   },
 };
 </script>
+

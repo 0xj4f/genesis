@@ -87,22 +87,26 @@ Why each library is used: [backend.md](backend.md) (API) and [frontend.md](front
 ```bash
 git clone https://github.com/0xj4f/genesis.git
 cd genesis
+scripts/fetch-credentials.sh   # generates the local ROOT password once (secrets/local.env)
 docker compose up -d
 ```
 
 Three services start:
 - **API** on `http://localhost:8001` (FastAPI + Swagger at `/docs`)
 - **Web** on `http://localhost:8082` (Vue frontend)
-- **MySQL** on port `3306`
+- **MySQL** on `127.0.0.1:3307` (container port 3306; set `DB_HOST_PORT` to change it)
 
 On first boot, Genesis:
 1. Generates RSA signing keys
 2. Runs database migrations (creates 8 tables)
-3. Seeds **Adam** -- the ROOT superadmin (credentials printed in API logs)
+3. Seeds **Adam** -- the ROOT superadmin, with the password from `secrets/local.env`
 
 ```bash
-# View Adam's credentials
-docker compose logs api | grep -A 5 "ROOT USER"
+# Show Adam's credentials (and check they work against the running stack)
+scripts/fetch-credentials.sh
+
+# Database seeded before the file existed? Apply the stored password once:
+scripts/fetch-credentials.sh --sync
 ```
 
 ### Try It

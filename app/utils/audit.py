@@ -26,7 +26,8 @@ security_log.addHandler(logging.NullHandler())
 
 # Extra fields are deliberately allowlisted. Do not add arbitrary request data.
 FIELDS = {"user_id", "actor", "target", "role", "action", "old", "new", "subject",
-          "client_id", "provider", "method", "purpose", "reason", "status", "count"}
+          "client_id", "provider", "method", "purpose", "reason", "status", "count",
+          "generated", "queued", "account_request"}
 FAILED = {"login_failed", "reauth_failed", "client_auth_failed", "authz_denied",
           "login_throttled", "refresh_client_mismatch", "refresh_replay_detected",
           "oauth_consent_denied", "request_rejected", "request_failed", "cli_failed",

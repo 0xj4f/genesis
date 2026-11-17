@@ -35,7 +35,7 @@ class SecurityMiddleware:
         limits = [(f"ip:{ip}", self.settings.RATE_LIMIT_PER_SECOND, 1)]
         if scope["method"] == "POST" and path in {
             "/token", "/admin/login", "/users", "/oauth/token", "/users/me/password",
-            "/auth/email/verify", "/auth/email/resend", "/auth/sso/exchange",
+            "/auth/email/verify", "/auth/email/resend", "/auth/sso/exchange", "/auth/password-reset-requests",
         }:
             limits.append((f"auth:{ip}", self.settings.AUTH_RATE_LIMIT_PER_MINUTE, 60))
         elif scope["method"] == "POST" and path == "/refresh_token":

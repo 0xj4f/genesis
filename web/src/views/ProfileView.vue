@@ -1,265 +1,242 @@
 <template>
-  <div class="page-container">
-    <!-- Loading -->
-    <div v-if="loading" class="page-center">
-      <div class="spinner" style="width: 32px; height: 32px;"></div>
+  <div class="page-container narrow">
+    <div v-if="loading" class="stack" aria-busy="true">
+      <div class="card row" style="gap: 16px;">
+        <span class="skeleton" style="width: 72px; height: 72px; border-radius: 50%;"></span>
+        <div class="stack-sm spacer">
+          <span class="skeleton" style="height: 18px; width: 45%;"></span>
+          <span class="skeleton" style="height: 12px; width: 65%;"></span>
+        </div>
+      </div>
+      <span class="skeleton" style="height: 220px; border-radius: 12px;"></span>
     </div>
 
     <template v-else>
-      <div class="profile-layout">
-        <!-- No profile yet: account security and linking still apply -->
-        <div v-if="!hasProfile" class="card text-center">
-          <h2>Complete your profile</h2>
-          <p class="text-muted mt-sm">You haven't set up your profile yet.</p>
-          <router-link to="/profile/create" class="btn btn-primary btn-lg mt-lg" style="display:inline-flex;">
-            Set Up Profile
-          </router-link>
-          <div v-if="linkedMsg" class="alert alert-success mt-md">{{ linkedMsg }}</div>
+      <!-- Identity -->
+      <section class="card identity-card">
+        <div class="identity">
+          <button type="button" class="avatar-button" :aria-label="avatar ? 'Change profile photo' : 'Add profile photo'"
+                  :disabled="!hasProfile || uploading" @click="triggerUpload">
+            <img v-if="avatar" :src="avatar" class="avatar avatar-xl" alt="" referrerpolicy="no-referrer" />
+            <span v-else class="avatar avatar-xl avatar-placeholder">{{ initials }}</span>
+            <span v-if="hasProfile" class="avatar-badge" aria-hidden="true">
+              <span v-if="uploading" class="spinner"></span>
+              <Camera v-else :size="14" />
+            </span>
+          </button>
+          <input ref="fileInput" type="file" accept="image/*" class="sr-only" tabindex="-1" aria-hidden="true"
+                 @change="handleUpload" />
+          <div class="wrap-anywhere">
+            <h1>{{ displayName }}</h1>
+            <p class="text-muted">{{ user?.email }}</p>
+            <div class="badge-row mt-sm">
+              <span class="badge">{{ user?.is_native ? 'Password account' : `${providerName(user?.auth_provider || '')} account` }}</span>
+              <span v-if="user" class="badge" :class="user.email_verified ? 'badge-success' : 'badge-warning'">
+                {{ user.email_verified ? 'Email verified' : 'Email unverified' }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div v-if="pageError" class="alert alert-error mt-md" role="alert">
+          <CircleAlert :size="18" aria-hidden="true" /><span>{{ pageError }}</span>
+        </div>
+      </section>
+
+      <!-- No profile yet -->
+      <section v-if="!hasProfile" class="card setup-card">
+        <div>
+          <h2>Finish setting up your profile</h2>
+          <p class="text-muted text-md mt-xs">Add your name and details so connected apps can greet you properly.</p>
+        </div>
+        <router-link to="/profile/create" class="btn btn-primary">Set up profile</router-link>
+      </section>
+
+      <!-- Personal info -->
+      <section v-else class="card">
+        <div class="card-header section-head">
+          <div>
+            <h2>Personal info</h2>
+            <p>Shared with apps only when you allow it.</p>
+          </div>
+          <button v-if="!editing" class="btn btn-secondary btn-sm" @click="startEditing">
+            <Pencil :size="15" aria-hidden="true" />Edit
+          </button>
         </div>
 
-        <!-- Profile Card -->
-        <div v-else class="card profile-card">
-          <div class="profile-top">
-            <div class="avatar-section">
-              <div v-if="avatar" class="avatar-wrap">
-                <img :src="avatar" class="avatar avatar-lg" alt="Avatar" referrerpolicy="no-referrer" />
-                <button class="avatar-edit btn btn-ghost btn-sm" @click="triggerUpload">Change</button>
-              </div>
-              <div v-else class="avatar avatar-lg avatar-placeholder" @click="triggerUpload"
-                   style="cursor: pointer;" :title="'Upload a photo'">
-                {{ initials }}
-              </div>
-              <input ref="fileInput" type="file" accept="image/*" style="display: none;" @change="handleUpload" />
-            </div>
-            <div class="profile-info">
-              <h2>{{ profile.given_name }} {{ profile.family_name }}</h2>
-              <p class="text-muted">{{ profile.email }}</p>
-              <div class="badge-row mt-sm">
-                <span class="badge" v-if="user">{{ user.auth_provider }}</span>
-                <span class="badge badge-success" v-if="user && user.email_verified">verified</span>
-                <span class="badge badge-danger" v-else>unverified</span>
-              </div>
-            </div>
+        <dl v-if="!editing" class="dl">
+          <div class="dl-row"><dt>Name</dt><dd>{{ [profile.given_name, profile.family_name].filter(Boolean).join(' ') || '—' }}</dd></div>
+          <div class="dl-row"><dt>Username</dt><dd>{{ user?.username }}</dd></div>
+          <div class="dl-row" v-if="profile.nick_name"><dt>Nickname</dt><dd>{{ profile.nick_name }}</dd></div>
+          <div class="dl-row" v-if="profile.date_of_birth"><dt>Date of birth</dt><dd>{{ shortDate(profile.date_of_birth) }}</dd></div>
+          <div class="dl-row" v-if="profile.mobile_number"><dt>Mobile</dt><dd>{{ profile.mobile_number }}</dd></div>
+          <div class="dl-row" v-if="formatAddress"><dt>Address</dt><dd>{{ formatAddress }}</dd></div>
+        </dl>
+
+        <form v-else class="stack" novalidate @submit.prevent="handleUpdate">
+          <ProfileFields v-model="form" />
+          <div v-if="editError" class="alert alert-error" role="alert">
+            <CircleAlert :size="18" aria-hidden="true" /><span>{{ editError }}</span>
           </div>
-
-          <div v-if="uploadMsg" class="alert alert-success mt-md">{{ uploadMsg }}</div>
-          <div v-if="linkedMsg" class="alert alert-success mt-md">{{ linkedMsg }}</div>
-
-          <!-- Profile details -->
-          <div class="profile-details mt-lg">
-            <div class="detail-row">
-              <span class="detail-label">Username</span>
-              <span class="detail-value">{{ user?.username }}</span>
-            </div>
-            <div class="detail-row" v-if="profile.nick_name">
-              <span class="detail-label">Nickname</span>
-              <span class="detail-value">{{ profile.nick_name }}</span>
-            </div>
-            <div class="detail-row" v-if="profile.date_of_birth">
-              <span class="detail-label">Date of Birth</span>
-              <span class="detail-value">{{ profile.date_of_birth }}</span>
-            </div>
-            <div class="detail-row" v-if="profile.mobile_number">
-              <span class="detail-label">Mobile</span>
-              <span class="detail-value">{{ profile.mobile_number }}</span>
-            </div>
-            <div class="detail-row" v-if="profile.address_line1">
-              <span class="detail-label">Address</span>
-              <span class="detail-value">{{ formatAddress }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Account type</span>
-              <span class="detail-value">{{ user?.is_native ? 'Native (password)' : 'SSO' }}</span>
-            </div>
-            <div class="detail-row" v-if="user?.last_login_at">
-              <span class="detail-label">Last login</span>
-              <span class="detail-value">{{ formatDate(user.last_login_at) }} via {{ user.last_login_method }}</span>
-            </div>
-          </div>
-
-          <!-- Edit form toggle -->
-          <div class="mt-lg">
-            <button v-if="!editing" class="btn btn-secondary btn-block" @click="startEditing">
-              Edit Profile
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" @click="editing = false">Cancel</button>
+            <button type="submit" class="btn btn-primary" :disabled="saving">
+              <span v-if="saving" class="spinner" aria-hidden="true"></span>Save changes
             </button>
-            <form v-else @submit.prevent="handleUpdate" class="stack mt-md">
-              <div class="form-group">
-                <label>First Name</label>
-                <input v-model="form.given_name" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label>Last Name</label>
-                <input v-model="form.family_name" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label>Nickname</label>
-                <input v-model="form.nick_name" class="form-input" placeholder="Optional" />
-              </div>
-              <div class="form-group">
-                <label>Date of Birth</label>
-                <input v-model="form.date_of_birth" type="date" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label>Mobile Number</label>
-                <input v-model="form.mobile_number" class="form-input" placeholder="+1 555 123 4567" />
-              </div>
-              <div class="form-group">
-                <label>Address</label>
-                <input v-model="form.address_line1" class="form-input" placeholder="Street address" />
-              </div>
-              <div class="form-group">
-                <label>Address Line 2</label>
-                <input v-model="form.address_line2" class="form-input" placeholder="Apt, suite, unit" />
-              </div>
-              <div class="row">
-                <div class="form-group" style="flex:1">
-                  <label>City</label>
-                  <input v-model="form.city" class="form-input" />
-                </div>
-                <div class="form-group" style="flex:1">
-                  <label>State</label>
-                  <input v-model="form.state" class="form-input" />
-                </div>
-              </div>
-              <div class="row">
-                <div class="form-group" style="flex:1">
-                  <label>Zip Code</label>
-                  <input v-model="form.zip_code" class="form-input" />
-                </div>
-                <div class="form-group" style="flex:1">
-                  <label>Country</label>
-                  <input v-model="form.country" class="form-input" />
-                </div>
-              </div>
-              <div v-if="editError" class="alert alert-error">{{ editError }}</div>
-              <div class="row">
-                <button type="submit" class="btn btn-primary" :disabled="saving">
-                  <span v-if="saving" class="spinner"></span>
-                  <span v-else>Save</span>
-                </button>
-                <button type="button" class="btn btn-secondary" @click="editing = false">Cancel</button>
-              </div>
-            </form>
           </div>
+        </form>
+      </section>
+
+      <!-- Sign-in & security -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Sign-in &amp; security</h2>
+          <p>Changes need your current password{{ user?.is_native ? '' : ' (or a recent sign-in, if you never set one)' }}.</p>
         </div>
 
-        <!-- Account Security Card -->
-        <div class="card">
-          <div class="card-header">
-            <h2>Account Security</h2>
-            <p>Changes need your current password (or a recent sign-in for SSO-only accounts).</p>
+        <div class="setting-row">
+          <div class="setting-icon" aria-hidden="true"><KeyRound :size="18" /></div>
+          <div class="spacer">
+            <strong>Password</strong>
+            <p>{{ user?.is_native ? 'Used to sign in with your username.' : 'Optional. Lets you sign in without a provider.' }}</p>
           </div>
-
-          <form @submit.prevent="handlePasswordChange" class="stack">
-            <h3 class="text-sm">Change password</h3>
-            <div class="form-group">
-              <label for="current-password">Current password</label>
-              <input v-model="pw.current" id="current-password" type="password" class="form-input"
-                     autocomplete="current-password" :required="user?.is_native"
-                     :placeholder="user?.is_native ? '' : 'leave empty if you never set one'" />
-            </div>
-            <div class="form-group">
-              <label for="new-password">New password</label>
-              <input v-model="pw.next" id="new-password" type="password" class="form-input"
-                     autocomplete="new-password" minlength="12" maxlength="128" required />
-            </div>
-            <div class="form-group">
-              <label for="confirm-password">Confirm new password</label>
-              <input v-model="pw.confirm" id="confirm-password" type="password" class="form-input"
-                     autocomplete="new-password" required />
-            </div>
-            <div v-if="pw.error" class="alert alert-error">{{ pw.error }}</div>
-            <div v-if="pw.msg" class="alert alert-success">{{ pw.msg }}</div>
-            <button type="submit" class="btn btn-secondary" :disabled="pw.saving">Update password</button>
-          </form>
-
-          <form @submit.prevent="handleEmailChange" class="stack mt-lg">
-            <h3 class="text-sm">Change email</h3>
-            <div class="form-group">
-              <label for="new-email">New email</label>
-              <input v-model="mail.email" id="new-email" type="email" class="form-input" autocomplete="email" required />
-            </div>
-            <div class="form-group">
-              <label for="email-password">Current password</label>
-              <input v-model="mail.current" id="email-password" type="password" class="form-input"
-                     autocomplete="current-password" :required="user?.is_native" />
-            </div>
-            <div v-if="mail.error" class="alert alert-error">{{ mail.error }}</div>
-            <div v-if="mail.msg" class="alert alert-success">{{ mail.msg }}</div>
-            <button type="submit" class="btn btn-secondary" :disabled="mail.saving">Update email</button>
-          </form>
+          <button v-if="openPanel !== 'password'" class="btn btn-secondary btn-sm" @click="openPanel = 'password'">Change</button>
         </div>
+        <form v-if="openPanel === 'password'" class="panel stack" novalidate @submit.prevent="handlePasswordChange">
+          <div class="form-group">
+            <label for="current-password">Current password</label>
+            <PasswordInput id="current-password" v-model="pw.current" autocomplete="current-password"
+                           :required="user?.is_native" describedby="current-password-hint" />
+            <p v-if="!user?.is_native" id="current-password-hint" class="form-hint">Leave empty if you never set one.</p>
+          </div>
+          <div class="form-group">
+            <label for="new-password">New password</label>
+            <PasswordInput id="new-password" v-model="pw.next" autocomplete="new-password" required
+                           describedby="new-password-hint" />
+            <p id="new-password-hint" class="form-hint">12+ characters with upper and lower case, a number and a symbol.</p>
+          </div>
+          <div class="form-group">
+            <label for="confirm-password">Confirm new password</label>
+            <PasswordInput id="confirm-password" v-model="pw.confirm" autocomplete="new-password" required />
+          </div>
+          <div v-if="pw.error" class="alert alert-error" role="alert"><CircleAlert :size="18" aria-hidden="true" /><span>{{ pw.error }}</span></div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" @click="closePanel">Cancel</button>
+            <button type="submit" class="btn btn-primary" :disabled="pw.saving">Update password</button>
+          </div>
+        </form>
 
-        <!-- Linked Accounts Card -->
-        <div class="card">
-          <div class="card-header">
-            <h2>Linked Accounts</h2>
-            <p>SSO providers connected to your account</p>
+        <div class="setting-row">
+          <div class="setting-icon" aria-hidden="true"><Mail :size="18" /></div>
+          <div class="spacer wrap-anywhere">
+            <strong>Email</strong>
+            <p>{{ user?.email }}</p>
           </div>
-          <div v-if="linkedProviders.length === 0" class="text-muted text-sm">
-            No SSO providers linked yet.
-          </div>
-          <div v-for="lp in linkedProviders" :key="lp.provider" class="linked-row">
-            <div class="row">
-              <SSOIcon :provider="lp.provider" />
-              <div>
-                <strong>{{ capitalize(lp.provider) }}</strong>
-                <span class="text-muted text-sm" v-if="lp.provider_email"> &middot; {{ lp.provider_email }}</span>
-              </div>
-            </div>
-            <button class="btn btn-ghost btn-sm" @click="handleUnlink(lp.provider)">Unlink</button>
-          </div>
-
-          <div v-if="availableToLink.length" class="mt-md">
-            <p class="text-sm text-muted mb-md">Link another provider:</p>
-            <div class="stack">
-              <button v-for="p in availableToLink" :key="p" type="button" class="btn-sso" @click="linkProvider(p)">
-                <SSOIcon :provider="p" />
-                Link {{ capitalize(p) }}
-              </button>
-            </div>
-          </div>
+          <button v-if="openPanel !== 'email'" class="btn btn-secondary btn-sm" @click="openPanel = 'email'">Change</button>
         </div>
-      </div>
+        <form v-if="openPanel === 'email'" class="panel stack" @submit.prevent="handleEmailChange">
+          <div class="form-group">
+            <label for="new-email">New email</label>
+            <input v-model="mail.email" id="new-email" type="email" inputmode="email" class="form-input"
+                   autocomplete="email" autocapitalize="none" required />
+          </div>
+          <div class="form-group">
+            <label for="email-password">Current password</label>
+            <PasswordInput id="email-password" v-model="mail.current" autocomplete="current-password"
+                           :required="user?.is_native" />
+          </div>
+          <div v-if="mail.error" class="alert alert-error" role="alert"><CircleAlert :size="18" aria-hidden="true" /><span>{{ mail.error }}</span></div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" @click="closePanel">Cancel</button>
+            <button type="submit" class="btn btn-primary" :disabled="mail.saving">Update email</button>
+          </div>
+        </form>
+
+        <router-link to="/sessions" class="setting-row setting-link">
+          <div class="setting-icon" aria-hidden="true"><MonitorSmartphone :size="18" /></div>
+          <div class="spacer">
+            <strong>Devices &amp; sessions</strong>
+            <p>See where you're signed in and sign out remotely.</p>
+          </div>
+          <ChevronRight :size="18" class="list-row-chevron" aria-hidden="true" />
+        </router-link>
+      </section>
+
+      <!-- Linked accounts -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Linked accounts</h2>
+          <p>Sign in with any of these providers.</p>
+        </div>
+        <div v-for="lp in linkedProviders" :key="lp.provider" class="setting-row">
+          <div class="setting-icon" aria-hidden="true"><SSOIcon :provider="lp.provider" /></div>
+          <div class="spacer wrap-anywhere">
+            <strong>{{ providerName(lp.provider) }}</strong>
+            <p>{{ lp.provider_email || lp.provider_username || 'Connected' }}</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click="handleUnlink(lp.provider)">Unlink</button>
+        </div>
+        <p v-if="!linkedProviders.length" class="text-muted text-md">No providers linked yet.</p>
+
+        <div v-if="availableToLink.length" class="link-list">
+          <button v-for="p in availableToLink" :key="p" type="button" class="btn-sso" @click="linkProvider(p)">
+            <SSOIcon :provider="p" aria-hidden="true" />
+            Link {{ providerName(p) }}
+          </button>
+        </div>
+      </section>
     </template>
   </div>
 </template>
 
 <script>
 import { mapGetters, mapActions, mapState } from 'vuex';
+import { Camera, CircleAlert, Pencil, KeyRound, Mail, MonitorSmartphone, ChevronRight } from 'lucide-vue-next';
 import api from '@/api';
 import SSOIcon from '@/components/SSOIcon.vue';
+import ProfileFields, { PROFILE_FIELDS } from '@/components/ProfileFields.vue';
+import PasswordInput from '@/components/ui/PasswordInput.vue';
 import { assetUrl } from '@/utils/url';
 import { passwordError, withoutEmpty } from '@/utils/validation';
+import { providerName } from '@/utils/messages';
+import { shortDate } from '@/utils/format';
+import { toast, confirmAction } from '@/utils/feedback';
 
 export default {
   name: 'ProfileView',
-  components: { SSOIcon },
+  components: {
+    Camera, CircleAlert, Pencil, KeyRound, Mail, MonitorSmartphone, ChevronRight,
+    SSOIcon, ProfileFields, PasswordInput,
+  },
   data() {
     return {
       loading: true,
       editing: false,
       saving: false,
+      uploading: false,
       editError: '',
-      uploadMsg: '',
+      pageError: '',
       form: {},
       linkedProviders: [],
-      linkedMsg: '',
-      pw: { current: '', next: '', confirm: '', error: '', msg: '', saving: false },
-      mail: { email: '', current: '', error: '', msg: '', saving: false },
+      openPanel: null,
+      pw: { current: '', next: '', confirm: '', error: '', saving: false },
+      mail: { email: '', current: '', error: '', saving: false },
     };
   },
   computed: {
     ...mapGetters(['hasProfile', 'initials', 'userProfile', 'currentUser']),
     ...mapState(['ssoProviders']),
     profile() { return this.userProfile || {}; },
+    user() { return this.currentUser; },
     avatar() { return assetUrl(this.profile.picture); },
+    displayName() {
+      const name = [this.profile.given_name, this.profile.family_name].filter(Boolean).join(' ');
+      return name || this.user?.username || 'Your account';
+    },
     formatAddress() {
       const p = this.profile;
       const parts = [p.address_line1, p.address_line2, p.city, p.state, p.zip_code, p.country].filter(Boolean);
       return parts.join(', ');
     },
-    user() { return this.currentUser; },
     availableToLink() {
       const linked = this.linkedProviders.map(l => l.provider);
       return this.ssoProviders.filter(p => !linked.includes(p));
@@ -275,26 +252,17 @@ export default {
     this.loading = false;
     const linked = this.$route.query.linked;
     if (typeof linked === 'string') {
-      this.linkedMsg = `${this.capitalize(linked)} is now linked to your account.`;
+      toast(`${providerName(linked)} is now linked to your account.`);
       this.$router.replace({ path: '/profile' });
     }
   },
   methods: {
     ...mapActions(['updateProfile', 'uploadPicture']),
+    providerName,
+    shortDate,
     startEditing() {
-      this.form = {
-        given_name: this.profile.given_name || '',
-        family_name: this.profile.family_name || '',
-        nick_name: this.profile.nick_name || '',
-        date_of_birth: this.profile.date_of_birth || '',
-        mobile_number: this.profile.mobile_number || '',
-        address_line1: this.profile.address_line1 || '',
-        address_line2: this.profile.address_line2 || '',
-        city: this.profile.city || '',
-        state: this.profile.state || '',
-        zip_code: this.profile.zip_code || '',
-        country: this.profile.country || '',
-      };
+      this.form = Object.fromEntries(PROFILE_FIELDS.map(key => [key, this.profile[key] || '']));
+      this.editError = '';
       this.editing = true;
     },
     async handleUpdate() {
@@ -303,6 +271,7 @@ export default {
       try {
         await this.updateProfile(withoutEmpty(this.form));
         this.editing = false;
+        toast('Profile updated');
       } catch (e) {
         this.editError = e.message;
       } finally {
@@ -312,12 +281,18 @@ export default {
     triggerUpload() { this.$refs.fileInput.click(); },
     async handleUpload(e) {
       const file = e.target.files[0];
+      e.target.value = '';
       if (!file) return;
+      this.pageError = '';
+      this.uploading = true;
       try {
         await this.uploadPicture(file);
-        this.uploadMsg = 'Profile picture updated!';
-        setTimeout(() => { this.uploadMsg = ''; }, 3000);
-      } catch (err) { this.editError = err.message; }
+        toast('Profile photo updated');
+      } catch (err) {
+        this.pageError = err.message;
+      } finally {
+        this.uploading = false;
+      }
     },
     async loadLinked() {
       try {
@@ -326,27 +301,40 @@ export default {
       } catch { this.linkedProviders = []; }
     },
     async handleUnlink(provider) {
+      const name = providerName(provider);
+      const ok = await confirmAction({
+        title: `Unlink ${name}?`,
+        message: `You won't be able to sign in with ${name} until you link it again.`,
+        confirmLabel: 'Unlink',
+        danger: true,
+      });
+      if (!ok) return;
       try {
         await api.unlinkProvider(provider);
         await this.loadLinked();
-      } catch (e) { this.editError = e.message; }
+        toast(`${name} unlinked`);
+      } catch (e) { this.pageError = e.message; }
     },
     async linkProvider(provider) {
       try {
         // The API returns the provider URL; the browser comes back via /sso/callback.
         const { authorization_url } = await api.ssoLink(provider);
         window.location.assign(authorization_url);
-      } catch (e) { this.editError = e.message; }
+      } catch (e) { this.pageError = e.message; }
+    },
+    closePanel() {
+      this.openPanel = null;
+      Object.assign(this.pw, { current: '', next: '', confirm: '', error: '' });
+      Object.assign(this.mail, { email: '', current: '', error: '' });
     },
     async handlePasswordChange() {
       const pw = this.pw;
-      pw.msg = '';
       pw.error = passwordError(pw.next, pw.confirm);
       if (pw.error) return;
       pw.saving = true;
       try {
-        pw.msg = (await api.changePassword(pw.current, pw.next)).message;
-        pw.current = pw.next = pw.confirm = '';
+        toast((await api.changePassword(pw.current, pw.next)).message);
+        this.closePanel();
       } catch (e) {
         pw.error = e.message;
       } finally {
@@ -355,17 +343,14 @@ export default {
     },
     async handleEmailChange() {
       const mail = this.mail;
-      mail.msg = '';
       mail.error = '';
       mail.saving = true;
       try {
         const body = { email: mail.email };
         if (mail.current) body.current_password = mail.current;
         const user = await api.updateUser(this.user.id, body);
-        mail.msg = user.email_change_pending
-          ? `Check ${mail.email} for a link to confirm the change.`
-          : 'Email updated.';
-        mail.email = mail.current = '';
+        toast(user.email_change_pending ? `Check ${mail.email} for a link to confirm the change.` : 'Email updated');
+        this.closePanel();
         await this.$store.dispatch('fetchMe');
       } catch (e) {
         mail.error = e.message;
@@ -373,75 +358,107 @@ export default {
         mail.saving = false;
       }
     },
-    capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); },
-    formatDate(d) { return d ? new Date(d).toLocaleString() : ''; },
   },
 };
 </script>
 
 <style scoped>
-.profile-layout {
-  display: grid;
-  gap: var(--space-lg);
-  max-width: 700px;
-  margin: 0 auto;
+.narrow { max-width: 720px; }
+
+.identity { display: flex; gap: var(--space-md); align-items: center; }
+.identity h1 { font-size: var(--text-xl); }
+
+@media (min-width: 768px) {
+  .identity { gap: var(--space-lg); }
+  .identity h1 { font-size: var(--text-2xl); }
 }
 
-.profile-top {
-  display: flex;
-  gap: var(--space-xl);
-  align-items: center;
+.avatar-button {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.avatar-section { position: relative; }
-.avatar-wrap { position: relative; }
+.avatar-button:disabled { cursor: default; }
 
-.avatar-edit {
+.avatar-badge {
   position: absolute;
-  bottom: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: var(--text-xs);
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-full);
-  padding: 2px 10px;
-}
-
-.profile-info h2 {
-  font-size: var(--text-2xl);
-  font-weight: 600;
-}
-
-.badge-row {
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: flex;
-  gap: var(--space-sm);
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.setup-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
   flex-wrap: wrap;
 }
 
-.profile-details {
-  border-top: 1px solid var(--border-color);
-  padding-top: var(--space-lg);
-}
+.setup-card h2 { font-size: var(--text-lg); }
 
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--bg-muted);
-  font-size: var(--text-sm);
-}
+.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-md); }
 
-.detail-label { color: var(--text-secondary); font-weight: 500; }
-.detail-value { color: var(--text-primary); }
-
-.linked-row {
+.setting-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--bg-muted);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
 }
 
-.linked-row:last-of-type { border-bottom: none; }
+.setting-row strong { font-size: var(--text-md); font-weight: 600; }
+.setting-row p { font-size: var(--text-sm); color: var(--text-muted); margin-top: 1px; }
+.setting-link:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+
+.setting-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.setting-icon .sso-icon { width: 18px; height: 18px; }
+
+.panel {
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.form-actions { display: flex; gap: var(--space-sm); justify-content: flex-end; }
+
+@media (max-width: 559px) {
+  .form-actions .btn { flex: 1; }
+}
+
+.link-list { display: grid; gap: var(--space-sm); margin-top: var(--space-md); }
+
+@media (min-width: 560px) {
+  .link-list { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
 </style>

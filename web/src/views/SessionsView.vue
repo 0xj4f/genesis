@@ -1,77 +1,93 @@
 <template>
-  <div class="page-container">
-    <div class="sessions-layout">
-      <div class="card">
-        <div class="card-header">
-          <div class="sessions-header-row">
-            <div>
-              <h2>Active Sessions</h2>
-              <p>Devices currently signed into your account</p>
-            </div>
-            <button v-if="sessions.length > 1" class="btn btn-danger btn-sm" @click="handleRevokeAll">
-              Logout All Others
-            </button>
-          </div>
-        </div>
-
-        <div v-if="loading" class="text-center">
-          <div class="spinner" style="width: 24px; height: 24px; margin: var(--space-lg) auto;"></div>
-        </div>
-
-        <div v-else-if="sessions.length === 0" class="text-center text-muted" style="padding: var(--space-xl);">
-          No active sessions found.
-        </div>
-
-        <div v-else class="session-list">
-          <div v-for="s in sessions" :key="s.id" class="session-row" :class="{ 'session-current': s.is_current }">
-            <div class="session-info">
-              <div class="session-device">
-                <span class="device-icon">{{ deviceEmoji(s.device_name) }}</span>
-                <div>
-                  <strong>{{ s.device_name || 'Unknown device' }}</strong>
-                  <span v-if="s.is_current" class="badge badge-accent" style="margin-left: 8px;">This device</span>
-                </div>
-              </div>
-              <div class="session-meta text-sm text-muted">
-                <span>{{ s.ip_address || 'Unknown IP' }}</span>
-                <span>&middot;</span>
-                <span>{{ s.login_method }}</span>
-                <span>&middot;</span>
-                <span>{{ formatDate(s.last_activity_at) }}</span>
-              </div>
-            </div>
-            <button v-if="!s.is_current" class="btn btn-outline btn-sm" @click="handleRevoke(s.id)">
-              Revoke
-            </button>
-          </div>
-        </div>
-
-        <div v-if="error" class="alert alert-error mt-md">{{ error }}</div>
-        <div v-if="successMsg" class="alert alert-success mt-md">{{ successMsg }}</div>
+  <div class="page-container narrow">
+    <div class="page-header">
+      <div>
+        <h1>Devices &amp; sessions</h1>
+        <p>Where your account is signed in right now.</p>
       </div>
+      <button v-if="otherSessions.length" class="btn btn-danger-outline btn-sm" @click="handleRevokeAll">
+        <LogOut :size="15" aria-hidden="true" />Sign out other devices
+      </button>
     </div>
+
+    <ErrorAlert v-if="error" :message="error" class="mb-md" @retry="loadSessions" />
+
+    <div class="card card-flush">
+      <SkeletonRows v-if="loading" :rows="3" />
+
+      <EmptyState v-else-if="!sessions.length" title="No active sessions"
+                  text="Sessions appear here when you sign in on a device.">
+        <template #icon><MonitorSmartphone :size="22" /></template>
+      </EmptyState>
+
+      <ul v-else class="list" aria-label="Sessions">
+        <li v-for="s in sortedSessions" :key="s.id" class="list-row session-row">
+          <span class="device-icon" :class="{ current: s.is_current }" aria-hidden="true">
+            <component :is="deviceIcon(s.device_name)" :size="20" />
+          </span>
+          <div class="list-row-main">
+            <div class="list-row-title">
+              <span class="wrap-anywhere">{{ s.device_name || 'Unknown device' }}</span>
+              <span v-if="s.is_current" class="badge badge-success">This device</span>
+            </div>
+            <div class="list-row-sub">
+              <span>{{ s.is_current ? 'Active now' : `Active ${relativeTime(s.last_activity_at).toLowerCase()}` }}</span>
+              <span aria-hidden="true"> · </span>
+              <span>{{ methodLabel(s.login_method) }}</span>
+              <template v-if="s.ip_address">
+                <span aria-hidden="true"> · </span><span class="mono">{{ s.ip_address }}</span>
+              </template>
+            </div>
+          </div>
+          <button v-if="!s.is_current" class="btn btn-ghost btn-sm" :aria-label="`Sign out ${s.device_name || 'this device'}`"
+                  @click="handleRevoke(s)">
+            Sign out
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <p class="text-sm text-subtle mt-md">
+      Don't recognise a device? Sign it out, then change your password from your profile.
+    </p>
   </div>
 </template>
 
 <script>
+import { LogOut, MonitorSmartphone, Smartphone, Tablet, Laptop, Monitor } from 'lucide-vue-next';
 import api from '@/api';
+import ErrorAlert from '@/components/ui/ErrorAlert.vue';
+import SkeletonRows from '@/components/ui/SkeletonRows.vue';
+import EmptyState from '@/components/ui/EmptyState.vue';
+import { relativeTime } from '@/utils/format';
+import { providerName } from '@/utils/messages';
+import { toast, confirmAction } from '@/utils/feedback';
 
 export default {
   name: 'SessionsView',
+  components: { ErrorAlert, LogOut, MonitorSmartphone, SkeletonRows, EmptyState },
   data() {
     return {
       sessions: [],
       loading: true,
       error: '',
-      successMsg: '',
     };
+  },
+  computed: {
+    otherSessions() { return this.sessions.filter(s => !s.is_current); },
+    sortedSessions() {
+      return [...this.sessions].sort((a, b) => Number(b.is_current) - Number(a.is_current)
+        || new Date(b.last_activity_at || 0) - new Date(a.last_activity_at || 0));
+    },
   },
   async created() {
     await this.loadSessions();
   },
   methods: {
+    relativeTime,
     async loadSessions() {
       this.loading = true;
+      this.error = '';
       try {
         const data = await api.getSessions();
         this.sessions = data.sessions || [];
@@ -81,109 +97,69 @@ export default {
         this.loading = false;
       }
     },
-    async handleRevoke(id) {
+    async handleRevoke(session) {
       this.error = '';
       try {
-        await api.revokeSession(id);
-        this.successMsg = 'Session revoked.';
-        setTimeout(() => { this.successMsg = ''; }, 3000);
+        await api.revokeSession(session.id);
+        toast(`Signed out ${session.device_name || 'device'}`);
         await this.loadSessions();
       } catch (e) {
         this.error = e.message;
       }
     },
     async handleRevokeAll() {
+      const count = this.otherSessions.length;
+      const ok = await confirmAction({
+        title: `Sign out ${count} other ${count === 1 ? 'device' : 'devices'}?`,
+        message: 'They will need to sign in again. This device stays signed in.',
+        confirmLabel: 'Sign out devices',
+        danger: true,
+      });
+      if (!ok) return;
       this.error = '';
       try {
         const data = await api.revokeAllSessions();
-        this.successMsg = data.message || 'All other sessions revoked.';
-        setTimeout(() => { this.successMsg = ''; }, 3000);
+        toast(data.message || 'Other devices signed out');
         await this.loadSessions();
       } catch (e) {
         this.error = e.message;
       }
     },
-    deviceEmoji(name) {
-      if (!name) return '?';
-      const n = name.toLowerCase();
-      if (n.includes('mobile') || n.includes('android') || n.includes('iphone')) return '(M)';
-      if (n.includes('mac')) return '(D)';
-      if (n.includes('windows')) return '(W)';
-      if (n.includes('linux')) return '(L)';
-      return '(?)';
+    deviceIcon(name) {
+      const n = (name || '').toLowerCase();
+      if (n.includes('ipad') || n.includes('tablet')) return Tablet;
+      if (n.includes('mobile') || n.includes('android') || n.includes('iphone')) return Smartphone;
+      if (n.includes('mac') || n.includes('windows') || n.includes('linux') || n.includes('chrome os')) return Laptop;
+      return Monitor;
     },
-    formatDate(d) {
-      if (!d) return '';
-      const date = new Date(d);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffMin = Math.floor(diffMs / 60000);
-      if (diffMin < 1) return 'Just now';
-      if (diffMin < 60) return `${diffMin}m ago`;
-      const diffHr = Math.floor(diffMin / 60);
-      if (diffHr < 24) return `${diffHr}h ago`;
-      return date.toLocaleDateString();
+    methodLabel(method) {
+      if (!method || method === 'password') return 'Password';
+      return providerName(method);
     },
   },
 };
 </script>
 
 <style scoped>
-.sessions-layout {
-  max-width: 700px;
-  margin: 0 auto;
-}
+.narrow { max-width: 720px; }
 
-.sessions-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.session-list {
-  border-top: 1px solid var(--border-color);
-}
-
-.session-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--bg-muted);
-}
-
-.session-row:last-child { border-bottom: none; }
-
-.session-current {
-  background: var(--bg-muted);
-  margin: 0 calc(-1 * var(--space-xl));
-  padding: var(--space-md) var(--space-xl);
-  border-radius: var(--radius-md);
-}
-
-.session-device {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
+.list { list-style: none; }
+.session-row { align-items: center; }
+.session-row .list-row-title { flex-wrap: wrap; row-gap: 4px; }
+.list-row-sub { overflow-wrap: anywhere; }
 
 .device-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  background: var(--bg-muted);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 
-.session-meta {
-  display: flex;
-  gap: var(--space-sm);
-  margin-top: var(--space-xs);
-  margin-left: calc(36px + var(--space-sm));
-}
+.device-icon.current { background: var(--success-soft); color: var(--success); border-color: transparent; }
 </style>
