@@ -28,8 +28,12 @@ def create_session(
     refresh_jti: str,
     request: Request,
     login_method: str = "password",
+    service_id: str | None = None,
 ) -> str:
-    """Create a new session and enforce concurrent session limits. Returns session_id."""
+    """Create a new session and enforce concurrent session limits. Returns session_id.
+
+    service_id: the application signed in to (None for Genesis itself).
+    """
     # Serialize the count/evict/insert transaction for this user across workers.
     user = db.query(User).filter(User.id == user_id).with_for_update().populate_existing().first()
     if not user or user.disabled or not user.is_active:
@@ -56,6 +60,7 @@ def create_session(
         "user_agent": user_agent,
         "device_name": parse_device_name(user_agent),
         "login_method": login_method,
+        "service_id": service_id,
         "is_active": True,
         "expires_at": datetime.utcnow() + timedelta(days=settings.OAUTH_REFRESH_TOKEN_TTL_DAYS),
     }
@@ -102,10 +107,10 @@ def revoke_all_sessions(
     return count
 
 
-def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id: str) -> str:
+def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id: str):
     """Validate a refresh token's jti against its session.
 
-    Returns the session_id if valid.
+    Returns the session row if valid.
     Raises HTTP 401 if session is invalid or jti mismatches (replay detection).
     """
     session = get_session_by_id_db(db, sid)
@@ -122,7 +127,7 @@ def validate_refresh_against_session(db: DBSession, jti: str, sid: str, user_id:
             detail="Refresh token has been rotated. Session revoked for security.",
         )
 
-    return session.id
+    return session
 
 
 def rotate_session_token(db: DBSession, session_id: str, new_jti: str, expected_jti: str, user_id: str) -> None:

@@ -29,6 +29,10 @@ from app.database.profile_db_interface import get_profile_by_user_db
 from app.database.oauth_account_db_interface import get_oauth_accounts_by_user_db
 from app.database.session_db_interface import count_active_sessions_by_user_db
 from app.services.session_service import create_session
+from app.services.membership_service import (
+    as_member, enroll_new_user, get_membership, scope_service, target_in_scope,
+)
+from app.models.service_db_model import ACTIVE, JOINED_ADMIN, SUSPENDED
 
 
 def admin_login_service(db: Session, username: str, password: str, request: Request) -> dict:
@@ -63,12 +67,26 @@ def get_analytics(db: Session) -> dict:
     return get_user_analytics_db(db)
 
 
+def _as_seen_by_service(user, membership) -> dict:
+    """A list row: the account, with role and status as its membership on the service."""
+    from app.models.admin_api_model import AdminUserListItem
+
+    row = AdminUserListItem.model_validate(user).model_dump()
+    if membership is not None:
+        suspended = membership.status == SUSPENDED
+        row.update(role=membership.role, disabled=suspended or user.disabled,
+                   is_active=not suspended and user.is_active,
+                   membership_status=membership.status, joined_via=membership.joined_via)
+    return row
+
+
 def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: str = None,
-                        **filters) -> dict:
-    users, total = get_users_paginated_db(db, page, per_page, search, **filters)
+                        actor=None, **filters) -> dict:
+    rows, total = get_users_paginated_db(db, page, per_page, search,
+                                         service_id=scope_service(actor) if actor else None, **filters)
     total_pages = math.ceil(total / per_page) if total > 0 else 1
     return {
-        "users": users,
+        "users": [_as_seen_by_service(user, membership) for user, membership in rows],
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -76,10 +94,12 @@ def get_users_paginated(db: Session, page: int = 1, per_page: int = 20, search: 
     }
 
 
-def get_user_detail(db: Session, user_id: str) -> dict:
+def get_user_detail(db: Session, user_id: str, actor=None) -> dict:
     user = get_user_by_id_db(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # A service's admin: 404 unless the account is a member there (active or suspended).
+    target, membership = target_in_scope(db, actor, user) if actor else (None, None)
 
     profile = get_profile_by_user_db(db, user_id)
     oauth_accounts = get_oauth_accounts_by_user_db(db, user_id)
@@ -134,7 +154,25 @@ def get_user_detail(db: Session, user_id: str) -> dict:
         "password_expires_at": user.password_expires_at,
         "pending_request_id": pending.id if pending else None,
         "pending_password_reset_at": pending.last_requested_at if pending else None,
+        "registered_via": user.registered_via,
+        **_membership_view(user, membership, actor),
     }
+
+
+def _membership_view(user, membership, actor) -> dict:
+    """Detail fields for the scope: one service's view, or (Genesis admins) every membership."""
+    if membership is not None:
+        suspended = membership.status == SUSPENDED
+        return {"role": membership.role, "disabled": suspended or user.disabled,
+                "is_active": not suspended and user.is_active,
+                "membership_status": membership.status, "joined_via": membership.joined_via}
+    if actor is not None and scope_service(actor):
+        return {}
+    return {"memberships": [
+        {"service": m.service_id, "status": m.status, "role": m.role, "joined_via": m.joined_via,
+         "activated_at": m.activated_at, "last_login_at": m.last_login_at}
+        for m in user.memberships
+    ]}
 
 
 def update_user_role(db: Session, user_id: str, new_role: str, actor) -> dict:
@@ -144,10 +182,23 @@ def update_user_role(db: Session, user_id: str, new_role: str, actor) -> dict:
     user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    target, membership = target_in_scope(db, actor, user, for_update=True)
 
     # Promoting to or demoting from admin/root is root-only; nobody changes their own role.
-    if not can_assign_role(actor, user, new_role):
+    if not can_assign_role(as_member(actor), target, new_role):
         deny(actor, "change_role", user_id)
+    if membership is not None:
+        # On a service the role is the membership's: user or admin there, nowhere else.
+        if new_role == "root":
+            raise HTTPException(status_code=400, detail="root is a Genesis-wide role, not a service role")
+        if membership.role != new_role:
+            old_role = membership.role
+            membership.role = new_role
+            db.commit()
+            revoke_all_user_sessions_db(db, user_id, reason="role_changed", service_id=membership.service_id)
+            security_event("role_changed", actor=str(actor.id), target=user_id, old=old_role, new=new_role,
+                           service=membership.service_id)
+        return {"message": f"User role updated to {new_role}"}
     if user.role != new_role:
         old_role = user.role
         user.role = new_role
@@ -164,7 +215,20 @@ def toggle_user_status(db: Session, user_id: str, actor) -> dict:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":
         raise HTTPException(status_code=403, detail="Cannot disable ROOT user")
-    ensure_can_manage(actor, user, "toggle_user_status")
+    target, membership = target_in_scope(db, actor, user, for_update=True)
+    ensure_can_manage(as_member(actor), target, "toggle_user_status")
+    if membership is not None:
+        # A service suspends its own membership; the account keeps working elsewhere.
+        suspended = membership.status != SUSPENDED
+        membership.status = SUSPENDED if suspended else ACTIVE
+        membership.suspended_at = datetime.utcnow() if suspended else None
+        membership.suspended_by = str(actor.id) if suspended else None
+        db.commit()
+        if suspended:
+            revoke_all_user_sessions_db(db, user_id, reason="suspended", service_id=membership.service_id)
+        status = "disabled" if suspended else "enabled"
+        security_event("user_" + status, actor=str(actor.id), target=user_id, service=membership.service_id)
+        return {"message": f"User {status}", "disabled": suspended}
 
     user.disabled = not user.disabled
     user.is_active = not user.disabled
@@ -200,7 +264,8 @@ def issue_password(db: Session, actor, user, new_password: str = None, require_c
     """
     if str(actor.id) == str(user.id):
         raise HTTPException(status_code=400, detail="Use POST /users/me/password to change your own password")
-    ensure_can_manage(actor, user, "reset_password")
+    target, _membership = target_in_scope(db, actor, user)
+    ensure_can_manage(as_member(actor), target, "reset_password")
     generated = new_password is None
     password = generate_temporary_password() if generated else new_password
     temporary = generated or require_change
@@ -237,12 +302,17 @@ def create_user_by_admin(db: Session, actor, body) -> dict:
     root may also create admins. Nobody creates root accounts here."""
     from app.services.user_service import validate_existing_user
 
-    if body.role != "user" and actor.role != "root":
+    service_id = scope_service(actor)
+    if body.role != "user" and as_member(actor).role != "root":
         deny(actor, "create_user")
+    if service_id and body.role == "root":
+        raise HTTPException(status_code=400, detail="root is a Genesis-wide role, not a service role")
     validate_existing_user(db, email=body.email, username=body.username)
     now = datetime.utcnow()
     user = User(
-        username=body.username, email=body.email, role=body.role,
+        # On a service the role belongs to the membership; the account itself stays a user.
+        username=body.username, email=body.email, role="user" if service_id else body.role,
+        registered_via=service_id,
         auth_provider="native", is_native=True,
         email_verified=body.email_verified, email_verified_at=now if body.email_verified else None,
     )
@@ -252,7 +322,13 @@ def create_user_by_admin(db: Session, actor, body) -> dict:
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered or username already taken")
-    security_event("user_created_by_admin", actor=str(actor.id), target=str(user.id), role=body.role)
+    enroll_new_user(db, user, service_id)
+    if service_id:
+        db.flush()
+        membership = get_membership(db, user.id, service_id)
+        membership.role, membership.joined_via = body.role, JOINED_ADMIN
+    security_event("user_created_by_admin", actor=str(actor.id), target=str(user.id), role=body.role,
+                   service=service_id)
     password = body.password.get_secret_value() if body.password else None
     result = issue_password(db, actor, user, password, body.require_password_change)
     return {**result, "message": "User created.", "user": user}

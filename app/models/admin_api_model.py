@@ -31,6 +31,11 @@ class AdminUserListItem(BaseModel):
     created_at: Optional[datetime] = None
     must_change_password: bool = False
     password_expires_at: Optional[datetime] = None
+    # Source: the service the account signed up on (None: Genesis itself, SSO or an admin).
+    registered_via: Optional[str] = None
+    # Scoped to a service: the membership there (pending, active or suspended) and how it began.
+    membership_status: Optional[str] = None
+    joined_via: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -95,6 +100,12 @@ class AdminUserDetail(BaseModel):
     # The open password-reset request for this user, if any.
     pending_request_id: Optional[UUID] = None
     pending_password_reset_at: Optional[datetime] = None
+    # Source: the service the account signed up on (None: Genesis itself, SSO or an admin).
+    registered_via: Optional[str] = None
+    # A service's admin sees that service's membership; Genesis admins see all of them.
+    membership_status: Optional[str] = None
+    joined_via: Optional[str] = None
+    memberships: list[dict] = []
 
 
 class RoleUpdateRequest(BaseModel):

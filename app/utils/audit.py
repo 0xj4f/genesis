@@ -27,7 +27,7 @@ security_log.addHandler(logging.NullHandler())
 # Extra fields are deliberately allowlisted. Do not add arbitrary request data.
 FIELDS = {"user_id", "actor", "target", "role", "action", "old", "new", "subject",
           "client_id", "provider", "method", "purpose", "reason", "status", "count",
-          "generated", "queued", "account_request"}
+          "generated", "queued", "account_request", "service", "joined_via"}
 FAILED = {"login_failed", "reauth_failed", "client_auth_failed", "authz_denied",
           "login_throttled", "refresh_client_mismatch", "refresh_replay_detected",
           "oauth_consent_denied", "request_rejected", "request_failed", "cli_failed",
@@ -47,11 +47,14 @@ def _safe(value, limit=128):
     return "".join(c if c.isprintable() else "?" for c in value[:limit])
 
 
-def identify_actor(actor_id: str, *, kind="user", role=None):
-    """Only call after authentication; never trust unverified JWT claims."""
+def identify_actor(actor_id: str, *, kind="user", role=None, service=None):
+    """Only call after authentication; never trust unverified JWT claims.
+
+    `service` is the application the actor signed in to (empty for Genesis itself).
+    """
     context = audit_context.get()
     if context is not None:
-        context["actor"] = {"type": kind, "id": _safe(actor_id), "role": _safe(role)}
+        context["actor"] = {"type": kind, "id": _safe(actor_id), "role": _safe(role), "service": _safe(service)}
 
 
 def security_event(event: str, **fields) -> None:

@@ -67,12 +67,16 @@ def revoke_session_db(db: DBSession, session_id: str, reason: str = "user_logout
 
 
 def revoke_all_user_sessions_db(
-    db: DBSession, user_id: str, except_session_id: str | None = None, reason: str = "user_logout"
+    db: DBSession, user_id: str, except_session_id: str | None = None, reason: str = "user_logout",
+    service_id: str | None = None,
 ) -> int:
+    """Sign a user out everywhere, or only of one service when service_id is given."""
     query = db.query(Session).filter(
         Session.user_id == user_id,
         Session.is_active == True,  # noqa: E712
     )
+    if service_id:
+        query = query.filter(Session.service_id == service_id)
     if except_session_id:
         query = query.filter(Session.id != except_session_id)
 

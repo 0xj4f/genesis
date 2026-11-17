@@ -48,6 +48,9 @@ def main():
         command.upgrade(Config("/app/alembic.ini"), "head")
         from app.database.seed import seed_adam
         seed_adam()
+        # SERVICES -> services table, plus pending memberships for accounts that lack one.
+        from app.services.membership_service import sync_services
+        sync_services()
     except Exception:
         security_event("startup_failed")
         raise

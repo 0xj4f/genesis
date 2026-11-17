@@ -475,6 +475,41 @@ A successful role change revokes all of the target's sessions, so their next tok
 | Staff | `GET /users/`, `POST /users/search`, `/admin/analytics`, `/admin/users*`, `/admin/clients*` | `require_admin`. User mutations also go through §5.3 and §5.4 |
 | Services | `POST /token/validate` | any valid token. Client‑credentials tokens skip the session check |
 
+### 5.6 Services: one account, many applications (v0.4.0)
+
+Several first-party applications (e.g. two shops) can share one Genesis. The deployment declares
+them in `SERVICES` (JSON, see `ServiceDeclaration` in `app/config.py`); startup copies them into the
+`services` table (`sync_services`). Their origins join the CORS list automatically.
+
+- **Which service is calling:** the browser's `Origin` header, matched against each service's
+  origins (`resolve_service`). An optional `client_id` (form field on `/token`, body field on
+  `POST /users/`) must agree with it. An unknown origin gets 403 before the password is checked.
+  No `Origin` (scripts, the Genesis console) means **Genesis context**: no service, global role.
+- **Password policy per service:** `strict` (12+, upper, lower, digit, symbol) or `basic`
+  (8+, a letter and a digit). Applied at sign-up and at password change (the session's service).
+  Sign-in never re-checks it, so one password works on every service.
+- **Memberships** (`service_memberships`): sign-up makes the account `active` where it signed up and
+  `pending` on every other auto-enroll service. The first sign-in on a service turns its `pending`
+  membership `active`. A service's admin can `suspend` it there; other services are unaffected.
+- **Source:** `users.registered_via` (+ registration IP and user agent) records where the account was
+  created. The admin user list shows it and filters on it (`?source=shop`, `?source=genesis`).
+- **Roles per service:** `user` or `admin` live on the membership. Only `root` is global.
+  Only root grants `admin`, and only on one service.
+- **Tokens:** with a service, `aud = [<service>, "genesis-api"]` and `svc = <service>`; `role` is the
+  role on that service. Each application sets its `EXPECTED_AUDIENCE` to its own id, so a token issued
+  to one shop is refused by the other. The session row stores the service; refresh keeps it, and an
+  access token whose `svc` disagrees with its session is refused.
+- **`/users/me/`** answers for the token's service: `role`, plus `service` and `membership_status`.
+  A membership that isn't active (suspended) gets 403 on every authenticated route.
+- **A service's admins** (`require_admin`) see only that service's active and suspended members;
+  anything else is 404. `disable` suspends the membership and signs the user out of that service
+  only. Deleting an account, admin password resets, account requests, OAuth clients, analytics and
+  `GET /users/` span all services, so they need `require_genesis_admin` (root, or an admin in Genesis
+  context).
+- **Upgrading:** migration 007 with `LEGACY_SERVICE_ID=shop` gives every existing account an active
+  membership on `shop`, turns former global admins into shop admins, and binds active sessions to
+  `shop`, so nobody is signed out. Tokens from before 0.4.0 have no `svc` and follow their session.
+
 ---
 
 ## 6. JWT in Genesis

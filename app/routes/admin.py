@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from typing import Literal, Optional
 
 from app.database.session import get_db
-from app.auth.auth import require_admin
+from app.auth.auth import require_admin, require_genesis_admin
 from app.auth.policy import ensure_can_manage
+from app.services.membership_service import as_member
 from app.database.oauth_client_db_interface import (
     create_oauth_client_db, get_oauth_client_by_id_db,
     get_oauth_client_by_name_db, get_all_oauth_clients_db, update_oauth_client_db,
@@ -50,7 +51,7 @@ def admin_login(
 # ---- Analytics ----
 
 @router.get("/admin/analytics", tags=["admin"], response_model=AnalyticsResponse)
-def analytics(current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def analytics(current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
     return get_analytics(db)
 
 
@@ -64,11 +65,14 @@ def list_users(
     role: Optional[Literal["user", "admin", "root"]] = None,
     status: Optional[Literal["active", "disabled"]] = None,
     provider: Optional[str] = Query(None, max_length=20),
+    source: Optional[str] = Query(None, max_length=64, description="registered_via service id, or 'genesis'"),
     sort: Literal["created", "last_login"] = "created",
     current_user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return get_users_paginated(db, page, per_page, search, role=role, status=status, provider=provider, sort=sort)
+    """A service's admin sees that service's members only; Genesis admins see every account."""
+    return get_users_paginated(db, page, per_page, search, actor=current_user, role=role, status=status,
+                               provider=provider, sort=sort, source=source)
 
 
 @router.post("/admin/users", tags=["admin"], response_model=AdminUserCreated, status_code=201)
@@ -80,7 +84,7 @@ def create_user(body: AdminUserCreate, current_user=Depends(require_admin), db: 
 
 @router.get("/admin/users/{user_id}", tags=["admin"], response_model=AdminUserDetail)
 def get_user(user_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
-    return get_user_detail(db, user_id)
+    return get_user_detail(db, user_id, current_user)
 
 
 @router.post("/admin/users/{user_id}/role", tags=["admin"])
@@ -102,7 +106,7 @@ def disable_user(user_id: str, current_user=Depends(require_admin), db: Session 
 def admin_reset_password(
     user_id: str,
     body: AdminPasswordReset,
-    current_user=Depends(require_admin),
+    current_user=Depends(require_genesis_admin),
     db: Session = Depends(get_db),
 ):
     new_password = body.new_password.get_secret_value() if body.new_password else None
@@ -110,13 +114,14 @@ def admin_reset_password(
 
 
 @router.delete("/admin/users/{user_id}", tags=["admin"])
-def delete_user(user_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def delete_user(user_id: str, current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
+    """Deletes the account on every service, so a service's own admin can't (they suspend instead)."""
     user = get_user_by_id_db(db, user_id, for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.role == "root":
         raise HTTPException(status_code=403, detail="Cannot delete ROOT user")
-    ensure_can_manage(current_user, user, "delete_user")
+    ensure_can_manage(as_member(current_user), user, "delete_user")
     delete_user_by_id_db(db, user_id)
     return {"message": "User deleted"}
 
@@ -129,36 +134,36 @@ def get_requests(
     category: Optional[Literal["password_reset"]] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_genesis_admin),
     db: Session = Depends(get_db),
 ):
     return list_requests(db, current_user, status, category, page, per_page)
 
 
 @router.get("/admin/requests/summary", tags=["admin"], response_model=AccountRequestSummary)
-def get_request_summary(current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def get_request_summary(current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
     return request_summary(db, current_user)
 
 
 @router.get("/admin/requests/{request_id}", tags=["admin"], response_model=AccountRequestItem)
-def get_one_request(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def get_one_request(request_id: str, current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
     return get_request(db, current_user, request_id)
 
 
 @router.post("/admin/requests/{request_id}/temporary-password", tags=["admin"], response_model=IssuedPassword)
-def resolve_with_temporary_password(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def resolve_with_temporary_password(request_id: str, current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
     return issue_password_for_request(db, current_user, request_id)
 
 
 @router.post("/admin/requests/{request_id}/dismiss", tags=["admin"])
-def dismiss(request_id: str, current_user=Depends(require_admin), db: Session = Depends(get_db)):
+def dismiss(request_id: str, current_user=Depends(require_genesis_admin), db: Session = Depends(get_db)):
     return dismiss_request(db, current_user, request_id)
 
 
 # ---- OAuth Client Management ----
 
 @router.post("/admin/clients", tags=["admin"], response_model=OAuthClientWithSecret)
-def create_client(client_data: OAuthClientCreate, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def create_client(client_data: OAuthClientCreate, db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     existing = get_oauth_client_by_name_db(db, client_data.client_name)
     if existing:
         raise HTTPException(status_code=409, detail=f"Client '{client_data.client_name}' already exists")
@@ -184,12 +189,12 @@ def create_client(client_data: OAuthClientCreate, db: Session = Depends(get_db),
 
 
 @router.get("/admin/clients", tags=["admin"], response_model=list[OAuthClientResponse])
-def list_clients(db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def list_clients(db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     return get_all_oauth_clients_db(db)
 
 
 @router.get("/admin/clients/{client_id}", tags=["admin"], response_model=OAuthClientResponse)
-def get_client(client_id: str, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def get_client(client_id: str, db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     client = get_oauth_client_by_id_db(db, client_id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -197,7 +202,7 @@ def get_client(client_id: str, db: Session = Depends(get_db), current_user=Depen
 
 
 @router.put("/admin/clients/{client_id}", tags=["admin"], response_model=OAuthClientResponse)
-def update_client(client_id: str, update_data: OAuthClientUpdate, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def update_client(client_id: str, update_data: OAuthClientUpdate, db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     client = update_oauth_client_db(db, client_id, update_data.model_dump(exclude_unset=True))
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -205,7 +210,7 @@ def update_client(client_id: str, update_data: OAuthClientUpdate, db: Session = 
 
 
 @router.post("/admin/clients/{client_id}/rotate-secret", tags=["admin"])
-def rotate_secret(client_id: str, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def rotate_secret(client_id: str, db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     new_secret = secrets.token_urlsafe(32)
     client = update_oauth_client_db(db, client_id, {"client_secret_hash": hash_client_secret(new_secret)})
     if not client:

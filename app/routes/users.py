@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database.session import get_db
@@ -14,27 +15,47 @@ from app.services.user_service import (
 )
 from app.models.user_api_model import (
     UserCreate, User, UserUpdate, UserDeleteResponse, UserSearchRequest, PasswordChangeRequest,
+    validate_password_for_policy,
 )
 from app.auth.auth import (
     oauth_authenticate_current_user, oauth_authenticate_pending_user, current_user_with_claims,
-    current_user_with_claims_pending, require_admin, require_reauth,
+    current_user_with_claims_pending, require_genesis_admin, require_reauth,
 )
+from app.services.membership_service import password_policy_for, resolve_service, scope_service, scoped_role
 from app.auth.policy import deny, ensure_can_manage
 from app.utils.audit import security_event
 
 router = APIRouter()
 
-@router.post("/", response_model=User)
-def create_user(user_create: UserCreate, db: Session = Depends(get_db)):
+def check_password_policy(password: str, service_id: str | None, field: str) -> None:
+    """The service's password policy, reported in the same 422 shape as model validation."""
     try:
-        user = create_user_service(db, user_create)
-        security_event("user_registered", target=str(user.id))
+        validate_password_for_policy(password, password_policy_for(service_id))
+    except ValueError as e:
+        raise RequestValidationError([{
+            "type": "value_error", "loc": ("body", field), "msg": f"Value error, {e}", "input": None,
+        }])
+
+
+@router.post("/", response_model=User)
+def create_user(user_create: UserCreate, request: Request, db: Session = Depends(get_db)):
+    """Sign up. The calling service (its Origin, or client_id) sets the password policy;
+    the account is active there and pending on the other services."""
+    service_id = resolve_service(request, user_create.client_id)
+    check_password_policy(user_create.password.get_secret_value(), service_id, "password")
+    try:
+        user = create_user_service(
+            db, user_create, service_id,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+        security_event("user_registered", target=str(user.id), service=service_id)
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/", response_model=list[User])
-def get_users(db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def get_users(db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     return get_all_users_service(db)
 
 
@@ -47,6 +68,7 @@ def change_own_password(
     """Change your password. Requires the current password (or, for SSO-only
     accounts, a recent sign-in). Other sessions are signed out."""
     current_user, _claims, session = auth
+    check_password_policy(body.new_password.get_secret_value(), session.service_id, "new_password")
     try:
         change_password_service(db, current_user, session, body)
     except ValueError as e:
@@ -101,7 +123,7 @@ def delete_user(user_id: UUID, db: Session = Depends(get_db), current_user=Depen
     return {"message": f"User with ID {user_id} has been successfully deleted"}
 
 @router.post("/search", response_model=User)
-def search_user(request: UserSearchRequest, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def search_user(request: UserSearchRequest, db: Session = Depends(get_db), current_user=Depends(require_genesis_admin)):
     user = None
     if request.email:
         user = get_user_by_email_service(db, request.email)
@@ -113,9 +135,12 @@ def search_user(request: UserSearchRequest, db: Session = Depends(get_db), curre
 
 
 def _require_self_or_staff(current_user, user_id: str, action: str):
-    # Checked before any lookup so other users' ids cannot be probed.
-    if str(current_user.id) != user_id and current_user.role not in ("admin", "root"):
-        deny(current_user, action, user_id)
+    # Checked before any lookup so other users' ids cannot be probed. Other accounts are
+    # shared by every service, so a service's admin manages them only through /admin/users.
+    role = scoped_role(current_user)
+    if str(current_user.id) == user_id or role == "root" or (role == "admin" and not scope_service(current_user)):
+        return
+    deny(current_user, action, user_id)
 
 # ===========================================================================
 # AUTHENTICATED ROUTES 
@@ -130,4 +155,10 @@ otherwise authentication process gets errors
 
 @router.get("/me/", response_model=User)
 def read_users_me(current_user: dict = Depends(oauth_authenticate_pending_user)):
-    return current_user
+    """Your account as the token's service sees it: the role there, and which service it is."""
+    membership = getattr(current_user, "scope_membership", None)
+    return User.model_validate(current_user).model_copy(update={
+        "role": scoped_role(current_user),
+        "service": scope_service(current_user),
+        "membership_status": membership.status if membership else None,
+    })

@@ -196,10 +196,18 @@ def test_expired_mismatched_and_unbound_refresh_tokens_rejected(client, make_use
     assert row.is_active
 
 
-@pytest.mark.parametrize("username,password", [("", "ValidPassword123!"), (" " * 5, "ValidPassword123!"), ("x" * 101, "ValidPassword123!"), ("bad\nname", "ValidPassword123!"), ("valid", "Aa1!short"), ("valid", "Aa1!" + "x" * 125), ("valid", "Aa1!" + "界" * 125)])
+@pytest.mark.parametrize("username,password", [("", "ValidPassword123!"), (" " * 5, "ValidPassword123!"), ("x" * 101, "ValidPassword123!"), ("bad\nname", "ValidPassword123!"), ("valid", "Aa1!sh"), ("valid", "Aa1!" + "x" * 125), ("valid", "Aa1!" + "界" * 125)])
 def test_invalid_user_input_rejected(username, password):
     with pytest.raises(ValidationError):
         UserCreate(username=username, email="test@example.com", password=password)
+
+
+def test_registration_without_a_service_keeps_the_strict_password_policy(client, store):
+    # 9 characters pass the model's length bounds; Genesis' own (strict) policy refuses them.
+    response = client.post("/users/", json={"username": "valid", "email": "test@example.com", "password": "Aa1!short"})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "password"]
+    assert "Aa1!short" not in response.text
 
 
 def test_long_login_password_is_rejected_without_hash_error(client, make_user):

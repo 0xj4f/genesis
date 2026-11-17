@@ -28,6 +28,37 @@ def validate_password_strength(password_str: str) -> str:
     return password_str
 
 
+BASIC_PASSWORD_MIN_LENGTH = 8
+
+
+def validate_password_for_policy(password_str: str, policy: str) -> str:
+    """Check a password against a service's policy (see SERVICES in app/config.py).
+
+    strict: the rule above (12+, upper, lower, digit, symbol). basic: 8+ with a letter and a digit.
+    """
+    if policy != "basic":
+        return validate_password_strength(password_str)
+    if len(password_str) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password must be at most {PASSWORD_MAX_LENGTH} characters long")
+    if len(password_str) < BASIC_PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must be at least {BASIC_PASSWORD_MIN_LENGTH} characters long")
+    if not re.search(r"[A-Za-z]", password_str):
+        raise ValueError("Password must contain at least one letter")
+    if not re.search(r"[0-9]", password_str):
+        raise ValueError("Password must contain at least one number")
+    return password_str
+
+
+def _within_password_bounds(password):
+    """Length bounds only: the full policy depends on the service and is checked by the route."""
+    password_str = password.get_secret_value() if isinstance(password, SecretStr) else str(password)
+    if not BASIC_PASSWORD_MIN_LENGTH <= len(password_str) <= PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"Password must be between {BASIC_PASSWORD_MIN_LENGTH} and {PASSWORD_MAX_LENGTH} characters long"
+        )
+    return password
+
+
 def validate_username(value: str) -> str:
     if not value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value):
         raise ValueError("Username must be nonblank and contain no control characters")
@@ -59,17 +90,15 @@ class UserBase(BaseModel):
 class UserCreate(BaseModel):
     username: Username
     email: EmailStr = Field(max_length=255)
+    # Checked against the signing-up service's policy in POST /users/.
     password: SecretStr
+    # Optional: names the service when there is no browser Origin (it must match one if there is).
+    client_id: Optional[str] = Field(None, max_length=64)
 
     @field_validator("password", mode="before")
     @classmethod
     def validate_password(cls, password):
-        if isinstance(password, SecretStr):
-            password_str = password.get_secret_value()
-        else:
-            password_str = str(password)
-        validate_password_strength(password_str)
-        return password
+        return _within_password_bounds(password)
 
 
 def _validated_secret(password):
@@ -99,6 +128,9 @@ class User(BaseModel):
     # Temporary password: the user must choose a new one before continuing.
     must_change_password: bool = False
     password_expires_at: Optional[datetime] = None
+    # /users/me/ only: the service of the token, and the membership there (None: Genesis itself).
+    service: Optional[str] = None
+    membership_status: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -117,12 +149,13 @@ class UserUpdate(BaseModel):
 class PasswordChangeRequest(BaseModel):
     # Optional only for SSO-only accounts setting their first password.
     current_password: Optional[SecretStr] = None
+    # Checked against the policy of the service this session signed in to.
     new_password: SecretStr
 
     @field_validator("new_password", mode="before")
     @classmethod
     def validate_new_password(cls, password):
-        return _validated_secret(password)
+        return _within_password_bounds(password)
 
 
 class AdminPasswordReset(BaseModel):

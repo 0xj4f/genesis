@@ -6,12 +6,17 @@ from fastapi import HTTPException
 from datetime import datetime, timedelta
 
 
-def create_user_db(db: Session, user_create: UserCreate) -> User:
-    data = user_create.model_dump()
+def create_user_db(db: Session, user_create: UserCreate, before_commit=None, **fields) -> User:
+    """Insert a user. `fields` sets extra columns (registration source); `before_commit(user)`
+    adds related rows (service memberships) in the same transaction."""
+    data = user_create.model_dump(exclude={"client_id"})
     # password is already hashed by the service layer (plain string at this point)
-    db_user = User(**data)
+    db_user = User(**data, **fields)
     db.add(db_user)
     try:
+        db.flush()
+        if before_commit:
+            before_commit(db_user)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -114,17 +119,36 @@ def get_user_by_provider_db(db: Session, provider: str, provider_id: str):
 
 def get_users_paginated_db(db: Session, page: int = 1, per_page: int = 20, search: str = None,
                            role: str = None, status: str = None, provider: str = None,
-                           sort: str = "created"):
-    query = db.query(User)
+                           sort: str = "created", service_id: str = None, source: str = None):
+    """Returns ([(user, membership or None)], total).
+
+    With service_id: only that service's active and suspended members; role and status
+    then filter the membership (status "disabled" = suspended there).
+    """
+    from app.models.service_db_model import ACTIVE, SUSPENDED, ServiceMembership
+
+    if service_id:
+        query = db.query(User, ServiceMembership).join(
+            ServiceMembership,
+            (ServiceMembership.user_id == User.id) & (ServiceMembership.service_id == service_id),
+        ).filter(ServiceMembership.status.in_([ACTIVE, SUSPENDED]))
+        if role:
+            query = query.filter(ServiceMembership.role == role)
+        if status:
+            query = query.filter(ServiceMembership.status == (SUSPENDED if status == "disabled" else ACTIVE))
+    else:
+        query = db.query(User)
+        if role:
+            query = query.filter(User.role == role)
+        if status:
+            query = query.filter(User.disabled == (status == "disabled"))
+    if source:
+        query = query.filter(User.registered_via == (None if source == "genesis" else source))
     if search:
         like = f"%{search}%"
         query = query.filter(
             (User.username.ilike(like)) | (User.email.ilike(like))
         )
-    if role:
-        query = query.filter(User.role == role)
-    if status:
-        query = query.filter(User.disabled == (status == "disabled"))
     if provider:
         query = query.filter(User.auth_provider == provider)
     if sort == "last_login":
@@ -132,8 +156,8 @@ def get_users_paginated_db(db: Session, page: int = 1, per_page: int = 20, searc
     else:
         query = query.order_by(User.created_at.desc())
     total = query.count()
-    users = query.offset((page - 1) * per_page).limit(per_page).all()
-    return users, total
+    rows = query.offset((page - 1) * per_page).limit(per_page).all()
+    return [tuple(row) if service_id else (row, None) for row in rows], total
 
 
 def get_user_analytics_db(db: Session) -> dict:

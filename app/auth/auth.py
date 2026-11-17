@@ -13,6 +13,7 @@ from app.database.session import get_db
 from app.config import get_settings
 from app.auth.keys import get_signing_key, get_verification_key_by_kid
 from app.models.session_db_model import Session as LoginSession
+from app.services.membership_service import apply_scope, scope_service, scoped_role
 import uuid
 
 settings = get_settings()
@@ -69,12 +70,16 @@ PASSWORD_CHANGE_SCOPE = "password_change"
 DEFAULT_SCOPE = "openid profile email"
 
 
-def build_user_claims(user, *, sid: str, auth_method: str, scope: str = DEFAULT_SCOPE) -> dict:
+def build_user_claims(user, *, sid: str, auth_method: str, scope: str = DEFAULT_SCOPE,
+                      service_id: str | None = None, role: str | None = None) -> dict:
     """Claims shared by every user token, whichever way the user signed in.
 
     `role` is read by relying parties (gen-commerce) that validate tokens offline;
     it can be stale for up to the access-token lifetime after a role change.
+    With a service, the token names it ("svc") and is also issued to it (aud), and
+    `role` is the role on that service, so a shop's token is refused by the other shops.
     """
+    audience = {"aud": [service_id, settings.OAUTH_DEFAULT_AUDIENCE], "svc": service_id} if service_id else {}
     if user.must_change_password:
         restricted = {"aud": [PASSWORD_CHANGE_AUDIENCE], "scope": PASSWORD_CHANGE_SCOPE}
     else:
@@ -88,7 +93,8 @@ def build_user_claims(user, *, sid: str, auth_method: str, scope: str = DEFAULT_
         "auth_method": auth_method,
         "scope": scope,
         "sid": sid,
-        "role": user.role,
+        "role": role or user.role,
+        **audience,
         **restricted,
     }
 
@@ -202,7 +208,12 @@ def _authenticate_access_token(token: str, db: Session, allow_pending_password_c
     if user.disabled or not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
     session = validate_access_session(db, payload)
-    identify_actor(str(user.id), role=user.role)
+    # The session row decides the service; the token's copy must agree with it.
+    # (Tokens from before services existed carry no "svc" and follow their session.)
+    if payload.get("svc") and payload["svc"] != session.service_id:
+        raise credentials_exception
+    apply_scope(db, user, session.service_id)
+    identify_actor(str(user.id), role=scoped_role(user), service=session.service_id)
     restricted_token = PASSWORD_CHANGE_AUDIENCE in payload.get("aud", [])
     if (user.must_change_password or restricted_token) and not allow_pending_password_change:
         raise HTTPException(status_code=403, detail=PASSWORD_CHANGE_REQUIRED)
@@ -275,7 +286,7 @@ def require_reauth(db: Session, user, session, current_password) -> None:
         raise HTTPException(status_code=403, detail="Please sign in again to make this change")
 
 
-def require_role(*allowed_roles):
+def require_role(*allowed_roles, service_admins: bool = True):
     """Factory that returns a FastAPI dependency enforcing role-based access.
 
     Usage: current_user=Depends(require_role("admin", "root"))
@@ -286,15 +297,21 @@ def require_role(*allowed_roles):
         token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
     ):
         user = oauth_authenticate_current_user(token, db)
-        if user.role not in allowed_roles:
-            security_event("authz_denied", actor=str(user.id), role=user.role, action="role_required")
+        # The role on the token's service (or the global role in Genesis context).
+        role = scoped_role(user)
+        if role not in allowed_roles or (not service_admins and scope_service(user) and role != "root"):
+            security_event("authz_denied", actor=str(user.id), role=role, action="role_required")
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         return user
     return _check
 
 
+# Account management within the caller's service (service admins see only their members).
 require_admin = require_role("admin", "root")
 require_root = require_role("root")
+# Everything that spans all accounts or Genesis itself: requests, OAuth clients, analytics,
+# deletes and password resets. A service's admin is refused; root and Genesis admins pass.
+require_genesis_admin = require_role("admin", "root", service_admins=False)
 
 
 def oauth_authenticate_internal_service(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> UserMinimal:

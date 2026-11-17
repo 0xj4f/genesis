@@ -140,6 +140,14 @@ def cmd_reset_password(args):
         db.close()
 
 
+def cmd_sync_services(args):
+    """Copy SERVICES into the database and add missing pending memberships (startup does this too)."""
+    from app.services.membership_service import sync_services
+
+    sync_services()
+    print("Services synced.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Genesis IAM CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -170,6 +178,10 @@ def main():
     reset_parser = subparsers.add_parser("reset-password", help="Emergency password reset (password read from stdin)")
     reset_parser.add_argument("username", help="Account username")
     reset_parser.set_defaults(func=cmd_reset_password)
+
+    # sync-services
+    sync_parser = subparsers.add_parser("sync-services", help="Apply SERVICES to the database (also runs at startup)")
+    sync_parser.set_defaults(func=cmd_sync_services)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

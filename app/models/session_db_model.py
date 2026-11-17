@@ -22,6 +22,9 @@ class Session(Base):
     expires_at = Column(DateTime, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
     revoked_reason = Column(String(100), nullable=True)
+    # The service the user signed in to; empty for Genesis itself (console, SSO, scripts).
+    # Tokens of this session carry it as "svc" and as an audience.
+    service_id = Column(String(64), ForeignKey("services.client_id"), nullable=True)
 
     user = relationship("User", back_populates="sessions")
 

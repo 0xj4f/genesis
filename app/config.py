@@ -2,8 +2,33 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 from functools import lru_cache
 from typing import Literal
-from pydantic import Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from urllib.parse import urlsplit
+
+# Audiences Genesis uses itself; a service may not take one of these ids.
+RESERVED_SERVICE_IDS = {"genesis-api", "genesis-password-change"}
+
+
+class ServiceDeclaration(BaseModel):
+    """A first-party application that signs its users in here (e.g. a shop).
+
+    Declared by the deployment (SERVICES, JSON) and copied into the services table
+    at startup. Its client_id becomes the token audience the application checks.
+    """
+    client_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,62}$")
+    name: str = Field(min_length=1, max_length=100)
+    # Browser origins of the application, e.g. https://shop.example.com.
+    origins: list[str] = Field(min_length=1)
+    # strict: 12+ characters with upper, lower, digit and symbol. basic: 8+ with a letter and a digit.
+    password_policy: Literal["strict", "basic"] = "strict"
+    # New accounts from any service also get a pending membership here.
+    auto_enroll: bool = True
+
+
+def _is_plain_origin(origin: str) -> bool:
+    url = urlsplit(origin)
+    return (url.scheme in {"http", "https"} and bool(url.netloc) and not url.path and not url.query
+            and not url.fragment and not url.username and not url.password and "*" not in origin)
 
 
 class Settings(BaseSettings):
@@ -42,6 +67,13 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ALLOW_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080"
+
+    # First-party applications sharing this Genesis (JSON list of ServiceDeclaration).
+    # Their origins are added to the CORS origins automatically.
+    SERVICES: list[ServiceDeclaration] = []
+    # Migration 007 gives every existing account an active membership in this service
+    # (where they signed up before services existed). Unset: no backfill.
+    LEGACY_SERVICE_ID: Optional[str] = None
 
     # Sessions
     MAX_CONCURRENT_SESSIONS: int = Field(5, ge=1, le=100)
@@ -131,6 +163,20 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_services(self):
+        ids = [service.client_id for service in self.SERVICES]
+        if len(ids) != len(set(ids)):
+            raise ValueError("SERVICES client_id values must be unique")
+        if RESERVED_SERVICE_IDS.intersection(ids) or self.OAUTH_DEFAULT_AUDIENCE in ids:
+            raise ValueError("A SERVICES client_id may not be a Genesis audience")
+        origins = [origin.rstrip("/") for service in self.SERVICES for origin in service.origins]
+        if len(origins) != len(set(origins)):
+            raise ValueError("Each SERVICES origin may belong to one service only")
+        if any(not _is_plain_origin(origin) for origin in origins):
+            raise ValueError("SERVICES origins must be scheme://host[:port], without path, query or credentials")
+        return self
+
+    @model_validator(mode="after")
     def validate_production(self):
         if self.ENVIRONMENT == "production":
             if self.OAUTH_ALGORITHM != "RS256" or not (self.OAUTH_PRIVATE_KEY_PATH and self.OAUTH_PUBLIC_KEY_PATH):
@@ -169,7 +215,18 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
+        """CORS_ALLOW_ORIGINS plus every declared service's origins."""
+        origins = [origin.strip() for origin in self.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
+        origins += [origin.rstrip("/") for service in self.SERVICES for origin in service.origins]
+        return list(dict.fromkeys(origins))
+
+    def service_by_id(self, client_id: str) -> Optional[ServiceDeclaration]:
+        return next((service for service in self.SERVICES if service.client_id == client_id), None)
+
+    def service_for_origin(self, origin: str) -> Optional[ServiceDeclaration]:
+        origin = origin.rstrip("/")
+        return next((service for service in self.SERVICES
+                     if origin in (o.rstrip("/") for o in service.origins)), None)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

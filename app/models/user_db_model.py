@@ -35,10 +35,19 @@ class User(Base):
     must_change_password = Column(Boolean, nullable=False, default=False)
     password_expires_at = Column(DateTime, nullable=True)
 
+    # Where the account was created: a service client_id (e.g. "shop"), or empty for
+    # Genesis itself, SSO and administrators. Logged once, never changed.
+    registered_via = Column(String(64), nullable=True, index=True)
+    registration_ip = Column(String(45), nullable=True)
+    registration_user_agent = Column(String(255), nullable=True)
+
     # Relationships
     profile = relationship("Profile", uselist=False, back_populates="user")
     oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+    memberships = relationship(
+        "ServiceMembership", cascade="all, delete-orphan", foreign_keys="ServiceMembership.user_id",
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, email={self.email})>"
